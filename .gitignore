@@ -1,0 +1,25 @@
+.env
+.env.local
+.env.*.local
+
+# Dependency and build artifacts
+**/node_modules/
+frontend/dist/
+website/dist/
+
+# Python cache and tooling
+**/__pycache__/
+**/*.py[cod]
+**/.pytest_cache/
+**/.mypy_cache/
+
+# Runtime-generated backend data
+backend/uploads/*
+!backend/uploads/.gitkeep
+
+# Logs and local editor files
+*.log
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

@@ -1,0 +1,35 @@
+# ===========================================
+# CrimeScope Backend Dependencies
+# ===========================================
+# Python 3.11+ required
+# Install: pip install -r requirements.txt
+# ===========================================
+
+# ============= core framework =============
+flask>=3.0.0
+flask-cors>=6.0.0
+
+# ============= LLM Related =============
+# OpenAI SDK（Use uniformly OpenAI format call LLM）
+openai>=1.0.0
+
+# ============= Zep Cloud =============
+zep-cloud==3.13.0
+
+# ============= OASIS social media simulation =============
+# OASIS social simulation framework
+camel-oasis==0.2.5
+camel-ai==0.2.78
+
+# ============= File processing =============
+PyMuPDF>=1.24.0
+# Encoding detection（Support nonUTF-8encoded text file）
+charset-normalizer>=3.0.0
+chardet>=5.0.0
+
+# ============= Tool library =============
+# Environment variable loading
+python-dotenv>=1.0.0
+
+# Data validation
+pydantic>=2.0.0

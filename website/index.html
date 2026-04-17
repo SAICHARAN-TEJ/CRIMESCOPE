@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CrimeScope — Criminal Event Reconstruction Engine</title>
+  <meta name="description" content="CrimeScope deploys 1,000 specialised AI agents to reconstruct criminal events from evidence — mapping causes, probabilities, and hidden patterns that human analysts miss." />
+  <meta property="og:title" content="CrimeScope — Criminal Event Reconstruction Engine" />
+  <meta property="og:description" content="Swarm intelligence for forensic evidence reconstruction." />
+  <meta name="theme-color" content="#0A0A0A" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' fill='%230A0A0A'/><text x='4' y='24' font-size='22' fill='%23C0392B'>⬡</text></svg>" />
+
+  <!-- GSAP 3 with premium plugins via CDN (SplitText, DrawSVG available in GSAP trial/CDN) -->
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/ScrollTrigger.min.js"></script>
+  <!-- SplitText & DrawSVG are GSAP Club plugins; we polyfill with a lightweight shim when unavailable -->
+  <script>
+    // Register ScrollTrigger immediately so it's available during module load
+    if (window.gsap && window.ScrollTrigger) {
+      gsap.registerPlugin(ScrollTrigger)
+    }
+  </script>
+
+  <script type="module" src="/src/main.js"></script>
+</head>
+<body>
+
+<!-- ══════════════════════════════════════
+      NAV
+     ══════════════════════════════════════ -->
+<nav id="cs-nav">
+  <a href="#hero" class="nav-logo">CRIME<span>SCOPE</span></a>
+  <div class="nav-links">
+    <a href="#how-it-works">How It Works</a>
+    <a href="#three-modes">Modes</a>
+    <a href="#swarm-viz">Live Demo</a>
+    <a href="#archetypes">Agents</a>
+    <a href="http://localhost:3001" class="nav-cta">Launch App →</a>
+  </div>
+</nav>
+
+<!-- ══════════════════════════════════════
+      §01 HERO
+     ══════════════════════════════════════ -->
+<section id="hero">
+  <canvas id="hero-canvas"></canvas>
+  <div class="container">
+    <div class="hero-content">
+      <div class="hero-eyebrow">v1.0 — Swarm Intelligence Engine</div>
+
+      <h1 class="hero-h1">
+        Reconstruct<br>
+        the crime.<br>
+        <span class="accent">Find the truth.</span>
+      </h1>
+
+      <p class="hero-sub">
+        CrimeScope deploys <strong>1,000 specialised AI agents</strong> to reconstruct criminal
+        events from raw evidence — mapping causes, probabilities, and hidden patterns
+        with forensic precision.
+      </p>
+
+      <div class="hero-actions">
+        <a href="http://localhost:3001" class="btn btn-primary btn-xl">Start Investigation →</a>
+        <a href="#how-it-works" class="btn btn-ghost btn-xl">How It Works</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="hero-badge mono">AGENT COUNT: 1,000 · MODE: RECONSTRUCTION</div>
+  <div class="hero-scroll-hint">
+    <span>SCROLL</span>
+    <div class="scroll-line"></div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════
+      §02 PROBLEM STATEMENT
+     ══════════════════════════════════════ -->
+<section id="problem">
+  <div class="container">
+    <div class="section-label">The Problem</div>
+    <div class="problem-grid">
+      <div class="problem-text">
+        <h2 class="section-heading">
+          Criminal investigations are drowning in<br>
+          <span class="accent">unstructured evidence</span>
+        </h2>
+        <p class="problem-lead">
+          Homicide detectives spend <em>73% of case time</em> manually cross-referencing
+          documents, photos, witness statements, and CCTV logs — a process that misses
+          non-obvious causal connections that only emerge from evidence in aggregate.
+        </p>
+        <p class="problem-lead" style="font-size:1rem; color: var(--text-dim)">
+          Traditional forensic tools are keyword-search interfaces. CrimeScope is a
+          reasoning engine that <em>reconstructs what happened</em>.
+        </p>
+      </div>
+
+      <div class="stat-cards">
+        <div class="stat-card gs-hidden">
+          <svg class="stat-card-border" viewBox="0 0 100% 100%" preserveAspectRatio="none" style="position:absolute;inset:0;width:100%;height:100%">
+            <rect x="0.75" y="0.75" width="calc(100% - 1.5px)" height="calc(100% - 1.5px)" rx="0"/>
+          </svg>
+          <div class="stat-number">73%</div>
+          <div class="stat-label">Time Lost to Manual Review</div>
+          <div class="stat-desc">The average detective spends nearly three-quarters of case time on document cross-referencing rather than actual investigative reasoning.</div>
+        </div>
+
+        <div class="stat-card gs-hidden">
+          <svg class="stat-card-border" viewBox="0 0 100% 100%" preserveAspectRatio="none" style="position:absolute;inset:0;width:100%;height:100%">
+            <rect x="0.75" y="0.75" width="calc(100% - 1.5px)" height="calc(100% - 1.5px)" rx="0"/>
+          </svg>
+          <div class="stat-number">4.2×</div>
+          <div class="stat-label">More Evidence Per Case (2024)</div>
+          <div class="stat-desc">Digital evidence volume has grown 4.2× in the past five years — CCTV, mobile data, social media — overwhelming traditional workflows.</div>
+        </div>
+
+        <div class="stat-card gs-hidden">
+          <svg class="stat-card-border" viewBox="0 0 100% 100%" preserveAspectRatio="none" style="position:absolute;inset:0;width:100%;height:100%">
+            <rect x="0.75" y="0.75" width="calc(100% - 1.5px)" height="calc(100% - 1.5px)" rx="0"/>
+          </svg>
+          <div class="stat-number">38%</div>
+          <div class="stat-label">Cold Cases Potentially Solvable</div>
+          <div class="stat-desc">Studies estimate over a third of cold cases contain enough existing evidence for resolution — it simply requires deeper cross-analysis than human bandwidth allows.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════
+      §03 HOW IT WORKS
+     ══════════════════════════════════════ -->
+<section id="how-it-works">
+  <div class="container">
+    <div class="section-label">Process</div>
+    <div class="hiw-pinned">
+      <div class="hiw-left">
+        <h2 class="section-heading">Five steps from evidence<br>to <span class="accent">verdict</span></h2>
+        <p class="section-sub">
+          CrimeScope's swarm intelligence pipeline transforms raw, unstructured evidence
+          into a ranked probability map of criminal hypotheses — with full causal reasoning
+          you can audit.
+        </p>
+      </div>
+
+      <div class="hiw-right">
+        <div class="timeline">
+          <!-- Connecting SVG line (DrawSVG) -->
+          <svg class="timeline-line-svg" viewBox="0 0 2 800" preserveAspectRatio="none">
+            <line x1="1" y1="0" x2="1" y2="800"/>
+          </svg>
+
+          <div class="timeline-item">
+            <div class="timeline-dot">01</div>
+            <div class="timeline-body">
+              <div class="timeline-title">Evidence Ingestion</div>
+              <div class="timeline-desc">Upload PDFs, images, CCTV stills, audio transcripts, spreadsheets, or raw text. CrimeScope parses and chunks every modality into its evidence graph.</div>
+            </div>
+          </div>
+
+          <div class="timeline-item">
+            <div class="timeline-dot">02</div>
+            <div class="timeline-body">
+              <div class="timeline-title">Ontology Construction</div>
+              <div class="timeline-desc">An ontology agent extracts entities — people, locations, objects, events, timestamps — and constructs a typed knowledge graph stored in Zep's memory layer.</div>
+            </div>
+          </div>
+
+          <div class="timeline-item">
+            <div class="timeline-dot">03</div>
+            <div class="timeline-body">
+              <div class="timeline-title">Swarm Deployment</div>
+              <div class="timeline-desc">1,000 specialised AI agents — Witness Analysts, Physical Evidence Specialists, Timeline Reconstructors, Motive Profilers — disperse across the evidence graph simultaneously.</div>
+            </div>
+          </div>
+
+          <div class="timeline-item">
+            <div class="timeline-dot">04</div>
+            <div class="timeline-body">
+              <div class="timeline-title">Hypothesis Convergence</div>
+              <div class="timeline-desc">Agents report findings back to a convergence layer. Contradictions are flagged. Corroborating chains strengthen probability scores. A consensus hypothesis emerges.</div>
+            </div>
+          </div>
+
+          <div class="timeline-item">
+            <div class="timeline-dot">05</div>
+            <div class="timeline-body">
+              <div class="timeline-title">Forensic Report</div>
+              <div class="timeline-desc">A structured report is generated with ranked hypotheses, confidence scores, evidence citations, timeline reconstructions, and identified investigative leads.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════
+      §04 THREE MODES
+     ══════════════════════════════════════ -->
+<section id="three-modes">
+  <div class="container">
+    <div class="section-label">Investigation Modes</div>
+    <h2 class="section-heading">Three engines.<br>One investigation.</h2>
+    <div class="modes-grid">
+      <div class="mode-card">
+        <div class="mode-icon">🔍</div>
+        <div class="mode-name">Mode Alpha</div>
+        <div class="mode-title">Rapid Triage</div>
+        <div class="mode-desc">Fast 15-minute analysis for initial case assessment. Deploy 200 agents to surface the top 3 hypotheses and critical evidence gaps.</div>
+        <ul class="mode-features">
+          <li>15-minute analysis</li>
+          <li>Top 3 hypotheses</li>
+          <li>Evidence gap mapping</li>
+          <li>Priority witness list</li>
+        </ul>
+      </div>
+
+      <div class="mode-card">
+        <div class="mode-icon">🧬</div>
+        <div class="mode-name">Mode Beta</div>
+        <div class="mode-title">Deep Reconstruction</div>
+        <div class="mode-desc">Full 1,000-agent deployment for comprehensive timeline reconstruction and causal chain analysis. Investigates second-order connections and alibis.</div>
+        <ul class="mode-features">
+          <li>Full 1,000-agent swarm</li>
+          <li>Complete causal chain</li>
+          <li>Alibi cross-verification</li>
+          <li>Motive probability matrix</li>
+        </ul>
+      </div>
+
+      <div class="mode-card">
+        <div class="mode-icon">❄️</div>
+        <div class="mode-name">Mode Gamma</div>
+        <div class="mode-title">Cold Case Revival</div>
+        <div class="mode-desc">Designed for cold cases with partial evidence. Agents model what evidence should exist and identify investigative actions most likely to yield breakthroughs.</div>
+        <ul class="mode-features">
+          <li>Partial evidence handling</li>
+          <li>Evidence prediction model</li>
+          <li>Lead prioritisation</li>
+          <li>New witness identification</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════
+      §05 SWARM VISUALISATION
+     ══════════════════════════════════════ -->
+<section id="swarm-viz">
+  <div class="container">
+    <div class="section-label">Live Visualisation</div>
+    <div class="swarm-inner">
+      <div class="swarm-text">
+        <h2 class="section-heading">Watch the swarm<br><span class="accent">think</span></h2>
+        <p class="section-sub">
+          Each dot represents an active AI agent. Watch as they disperse across the
+          evidence space, cluster around viable hypotheses, then converge on the most
+          probable reconstruction.
+        </p>
+
+        <div class="swarm-phases">
+          <div class="swarm-phase active">
+            <span class="phase-num">01</span>
+            <div>
+              <div class="phase-label">Dispersion</div>
+              <div class="phase-desc-text">Agents scatter to cover the full evidence graph</div>
+            </div>
+          </div>
+          <div class="swarm-phase">
+            <span class="phase-num">02</span>
+            <div>
+              <div class="phase-label">Exploration</div>
+              <div class="phase-desc-text">Sub-swarms probe each causal hypothesis independently</div>
+            </div>
+          </div>
+          <div class="swarm-phase">
+            <span class="phase-num">03</span>
+            <div>
+              <div class="phase-label">Convergence</div>
+              <div class="phase-desc-text">High-confidence paths reinforce and begin clustering</div>
+            </div>
+          </div>
+          <div class="swarm-phase">
+            <span class="phase-num">04</span>
+            <div>
+              <div class="phase-label">Verdict</div>
+              <div class="phase-desc-text">Primary hypothesis emerges with probability score</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <canvas id="swarm-canvas"></canvas>
+        <div class="swarm-state-label">DISPERSION</div>
+        <div class="swarm-progress-track">
+          <div class="swarm-progress-fill"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════
+      §06 ARCHETYPE SHOWCASE
+     ══════════════════════════════════════ -->
+<section id="archetypes">
+  <div class="container archetypes-header">
+    <div class="section-label">Agent Architecture</div>
+    <h2 class="section-heading">Meet the <span class="accent">1,000 investigators</span></h2>
+    <p class="section-sub">Each agent archetype brings a different forensic specialisation to the swarm. Click to drag the carousel.</p>
+  </div>
+
+  <div class="archetype-track-wrap">
+    <div class="archetype-track">
+
+      <div class="archetype-card">
+        <div class="archetype-code">CS-ARCH-001</div>
+        <span class="archetype-icon">🔬</span>
+        <div class="archetype-name">Physical Evidence Specialist</div>
+        <div class="archetype-role">Forensics</div>
+        <div class="archetype-trait">Cross-references physical evidence with witness accounts. Detects spatial inconsistencies and trajectory impossibilities.</div>
+      </div>
+
+      <div class="archetype-card">
+        <div class="archetype-code">CS-ARCH-002</div>
+        <span class="archetype-icon">🕐</span>
+        <div class="archetype-name">Timeline Reconstructor</div>
+        <div class="archetype-role">Chronology</div>
+        <div class="archetype-trait">Builds and stress-tests event timelines. Identifies temporal contradictions across evidence sources.</div>
+      </div>
+
+      <div class="archetype-card">
+        <div class="archetype-code">CS-ARCH-003</div>
+        <span class="archetype-icon">🗣️</span>
+        <div class="archetype-name">Witness Statement Analyst</div>
+        <div class="archetype-role">Testimony</div>
+        <div class="archetype-trait">Analyses witness accounts for internal consistency, contradiction with physical evidence, and deception indicators.</div>
+      </div>
+
+      <div class="archetype-card">
+        <div class="archetype-code">CS-ARCH-004</div>
+        <span class="archetype-icon">💰</span>
+        <div class="archetype-name">Financial Motive Profiler</div>
+        <div class="archetype-role">Motive Analysis</div>
+        <div class="archetype-trait">Traces financial flows, insurance beneficiaries, debts, and economic motivators relevant to the event.</div>
+      </div>
+
+      <div class="archetype-card">
+        <div class="archetype-code">CS-ARCH-005</div>
+        <span class="archetype-icon">📡</span>
+        <div class="archetype-name">Digital Footprint Tracer</div>
+        <div class="archetype-role">Digital Forensics</div>
+        <div class="archetype-trait">Analyses mobile data, social media, CCTV metadata, and digital communications for location and behavioural patterns.</div>
+      </div>
+
+      <div class="archetype-card">
+        <div class="archetype-code">CS-ARCH-006</div>
+        <span class="archetype-icon">🧠</span>
+        <div class="archetype-name">Behavioural Psychologist</div>
+        <div class="archetype-role">Profiling</div>
+        <div class="archetype-trait">Models perpetrator psychology from evidence patterns. Identifies signature behaviours and likely decision-making under pressure.</div>
+      </div>
+
+      <div class="archetype-card">
+        <div class="archetype-code">CS-ARCH-007</div>
+        <span class="archetype-icon">🗺️</span>
+        <div class="archetype-name">Geospatial Analyst</div>
+        <div class="archetype-role">Location Intelligence</div>
+        <div class="archetype-trait">Maps movement patterns, escape routes, surveillance blind spots, and geographic opportunity windows.</div>
+      </div>
+
+      <div class="archetype-card">
+        <div class="archetype-code">CS-ARCH-008</div>
+        <span class="archetype-icon">⚖️</span>
+        <div class="archetype-name">Legal Framework Auditor</div>
+        <div class="archetype-role">Admissibility</div>
+        <div class="archetype-trait">Flags evidence that may be inadmissible, identifies chain-of-custody issues, and ensures reconstruction is legally defensible.</div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════
+      §07 REPORT PREVIEW
+     ══════════════════════════════════════ -->
+<section id="report-preview">
+  <div class="container">
+    <div class="section-label">Output</div>
+    <h2 class="section-heading">A forensic report that<br><span class="accent">holds up in court</span></h2>
+    <p class="section-sub">Every hypothesis is ranked, cited, and auditable. No black-box conclusions — full reasoning chains.</p>
+
+    <div class="report-wrap">
+      <!-- Mock report UI -->
+      <div class="report-mock">
+        <div class="report-mock-title">CRIMESCOPE FORENSIC REPORT · CASE #2024-089</div>
+
+        <div class="prob-list">
+          <div class="prob-item">
+            <div class="prob-label">
+              <span class="prob-name">H1 — Premeditated homicide by partner</span>
+              <span class="prob-value">78%</span>
+            </div>
+            <div class="prob-bar-track">
+              <div class="prob-bar-fill" data-pct="78"></div>
+            </div>
+          </div>
+
+          <div class="prob-item">
+            <div class="prob-label">
+              <span class="prob-name">H2 — Robbery gone wrong (unknown actor)</span>
+              <span class="prob-value">14%</span>
+            </div>
+            <div class="prob-bar-track">
+              <div class="prob-bar-fill" data-pct="14"></div>
+            </div>
+          </div>
+
+          <div class="prob-item">
+            <div class="prob-label">
+              <span class="prob-name">H3 — Accidental death (staged scene)</span>
+              <span class="prob-value">6%</span>
+            </div>
+            <div class="prob-bar-track">
+              <div class="prob-bar-fill" data-pct="6"></div>
+            </div>
+          </div>
+
+          <div class="prob-item">
+            <div class="prob-label">
+              <span class="prob-name">H4 — Third-party financial motive</span>
+              <span class="prob-value">2%</span>
+            </div>
+            <div class="prob-bar-track">
+              <div class="prob-bar-fill" data-pct="2"></div>
+            </div>
+          </div>
+        </div>
+
+        <div style="margin-top:1.5rem; padding-top:1.5rem; border-top:1px solid var(--border); font-size:0.72rem; color:var(--muted); line-height:1.8">
+          Evidence base: 47 documents · 12 images · 3 CCTV logs · 8 witness transcripts<br>
+          Agent cycles: 14,300 · Convergence confidence: 0.94 · Analysis duration: 4m 37s
+        </div>
+      </div>
+
+      <!-- Features -->
+      <div class="report-features">
+        <div class="report-feature">
+          <div class="rf-num">RF-01</div>
+          <div class="rf-title">Cited Evidence Only</div>
+          <div class="rf-desc">Every claim in the report links to the specific document, timestamp, and passage that supports it. No hallucinated inferences.</div>
+        </div>
+        <div class="report-feature">
+          <div class="rf-num">RF-02</div>
+          <div class="rf-title">Contradiction Log</div>
+          <div class="rf-desc">Explicit table of contradictions found between evidence sources — invaluable for cross-examination preparation.</div>
+        </div>
+        <div class="report-feature">
+          <div class="rf-num">RF-03</div>
+          <div class="rf-title">Investigative Leads</div>
+          <div class="rf-desc">Ranked list of follow-up actions ordered by breakthrough probability — what to investigate next and why.</div>
+        </div>
+        <div class="report-feature">
+          <div class="rf-num">RF-04</div>
+          <div class="rf-title">Full Causal Chain Export</div>
+          <div class="rf-desc">Export the complete causal graph as PDF, Markdown, or JSON for integration with case management systems.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════
+      §08 TARGET USERS
+     ══════════════════════════════════════ -->
+<section id="target-users">
+  <div class="container">
+    <div class="section-label">Who Uses CrimeScope</div>
+    <h2 class="section-heading">Built for every layer<br>of <span class="accent">criminal justice</span></h2>
+
+    <div class="users-grid">
+      <div class="user-card">
+        <span class="user-icon">🕵️</span>
+        <div class="user-role">Law Enforcement</div>
+        <div class="user-title">Homicide &amp; Major Crimes Units</div>
+        <div class="user-desc">From fresh scenes to decade-old cold cases — detectives use CrimeScope to surface connections buried in thousands of documents.</div>
+        <div class="user-tags">
+          <span class="user-tag">ACTIVE CASES</span>
+          <span class="user-tag">COLD CASES</span>
+          <span class="user-tag">GANG INTELLIGENCE</span>
+        </div>
+      </div>
+
+      <div class="user-card">
+        <span class="user-icon">⚖️</span>
+        <div class="user-role">Legal Professionals</div>
+        <div class="user-title">Prosecutors &amp; Defence Attorneys</div>
+        <div class="user-desc">Build or challenge case narratives with probabilistic evidence analysis. Identify gaps before opposing counsel does.</div>
+        <div class="user-tags">
+          <span class="user-tag">TRIAL PREP</span>
+          <span class="user-tag">CASE THEORY</span>
+          <span class="user-tag">CROSS-EXAM</span>
+        </div>
+      </div>
+
+      <div class="user-card">
+        <span class="user-icon">📰</span>
+        <div class="user-role">Investigative Journalism</div>
+        <div class="user-title">Journalists &amp; Research Teams</div>
+        <div class="user-desc">Investigate corruption, fraud, and accountability cases by letting the swarm find connections across tens of thousands of leaked documents.</div>
+        <div class="user-tags">
+          <span class="user-tag">DOCUMENT LEAKS</span>
+          <span class="user-tag">CORRUPTION</span>
+          <span class="user-tag">FINANCIAL CRIME</span>
+        </div>
+      </div>
+
+      <div class="user-card">
+        <span class="user-icon">🏛️</span>
+        <div class="user-role">Government &amp; Policy</div>
+        <div class="user-title">Intelligence Analysts &amp; Inspectors General</div>
+        <div class="user-desc">Cross-reference intelligence reports, incident logs, and open-source data to map criminal networks and identify systemic patterns.</div>
+        <div class="user-tags">
+          <span class="user-tag">NETWORK MAPPING</span>
+          <span class="user-tag">PATTERN ANALYSIS</span>
+          <span class="user-tag">OSINT</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════
+      §09 DEMO CASE TEASER
+     ══════════════════════════════════════ -->
+<section id="demo-teaser">
+  <div class="container">
+    <div class="section-label">Live Demo</div>
+    <h2 class="section-heading">See a real case<br><span class="accent">reconstructed</span></h2>
+    <p class="section-sub">The following is a redacted training case from the CrimeScope beta. Watch the evidence emerge.</p>
+
+    <div class="demo-case">
+      <div class="demo-case-header">
+        <span>CASE FILE // TRAINING DATASET // CS-DEMO-2024</span>
+        <span class="demo-case-badge">REDACTED</span>
+      </div>
+
+      <div class="redact-line">
+        <span class="redact-label">VICTIM</span>
+        <span class="redact-value">
+          Dr. Elena M., 42, biochemist
+          <span class="redact-bar"></span>
+        </span>
+      </div>
+
+      <div class="redact-line">
+        <span class="redact-label">LOCATION</span>
+        <span class="redact-value">
+          Riverside Industrial Quarter, Building 7
+          <span class="redact-bar"></span>
+        </span>
+      </div>
+
+      <div class="redact-line">
+        <span class="redact-label">TIME OF DEATH</span>
+        <span class="redact-value">
+          Between 23:40 and 01:15 (coroner estimate ±45 min)
+          <span class="redact-bar"></span>
+        </span>
+      </div>
+
+      <div class="redact-line">
+        <span class="redact-label">EVIDENCE</span>
+        <span class="redact-value">
+          14 documents, 3 lab photos, 2 CCTV segments, 5 statements
+          <span class="redact-bar"></span>
+        </span>
+      </div>
+
+      <div class="redact-line">
+        <span class="redact-label">PRIME SUSPECT</span>
+        <span class="redact-value">
+          Research partner with access and undisclosed financial motive
+          <span class="redact-bar"></span>
+        </span>
+      </div>
+
+      <div class="demo-hypothesis">
+        <h4>CrimeScope Reconstruction Output</h4>
+        <div class="hyp-row gs-hidden">
+          <span class="hyp-pct">82%</span>
+          <span class="hyp-text">Premeditated poisoning by research partner — confirmed via procurement records and timeline gap in alibi</span>
+        </div>
+        <div class="hyp-row gs-hidden">
+          <span class="hyp-pct">11%</span>
+          <span class="hyp-text">Accidental laboratory exposure — inconsistent with chemical quantities recovered</span>
+        </div>
+        <div class="hyp-row gs-hidden">
+          <span class="hyp-pct">7%</span>
+          <span class="hyp-text">Unknown third party — insufficient evidence to characterise further</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════
+      §10 FINAL CTA
+     ══════════════════════════════════════ -->
+<section id="final-cta">
+  <div class="container" style="position:relative;z-index:2">
+    <div class="cta-eyebrow">Ready to investigate?</div>
+
+    <h2 class="cta-h2">
+      Every case has<br>
+      a <span class="accent">hidden truth.</span><br>
+      Let the swarm find it.
+    </h2>
+
+    <p class="cta-sub">
+      Upload your evidence. Deploy 1,000 agents. Get a ranked forensic reconstruction
+      in under five minutes.
+    </p>
+
+    <div class="cta-actions">
+      <a href="http://localhost:3001" class="btn btn-primary btn-xl">Start Free Investigation →</a>
+      <a href="#how-it-works" class="btn btn-ghost btn-xl">Read the Docs</a>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════
+      FOOTER
+     ══════════════════════════════════════ -->
+<footer id="cs-footer">
+  <div class="footer-logo">CRIME<span>SCOPE</span> v1.0</div>
+  <div class="footer-note">POWERED BY CAMEL-AI · ZEP GRAPH MEMORY · OPENROUTER</div>
+  <div class="footer-note" style="color:var(--border)">© 2026 CrimeScope Project</div>
+</footer>
+
+</body>
+</html>
