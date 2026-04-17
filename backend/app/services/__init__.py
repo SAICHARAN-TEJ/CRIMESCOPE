@@ -59,4 +59,5 @@ _safe_import(
     ["SimulationIPCClient", "SimulationIPCServer", "IPCCommand", "IPCResponse", "CommandType", "CommandStatus"],
 )
 _safe_import("crimescope_swarm_service", ["CrimeScopeSwarmService", "HypothesisCluster"])
+_safe_import("evidence_evaluator", ["EvidenceEvaluator"])
 

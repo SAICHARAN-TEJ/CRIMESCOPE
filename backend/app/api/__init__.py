@@ -27,7 +27,7 @@ def _safe_import_routes(module_name: str) -> None:
         logger.warning("Skipping API routes module '%s': %s", module_name, exc)
 
 
-for _module in ("graph", "simulation", "report", "crimescope", "system"):
+for _module in ("graph", "graph_spec_routes", "simulation", "simulation_spec_routes", "report", "report_spec_routes", "crimescope", "system"):
     _safe_import_routes(_module)
 
 
