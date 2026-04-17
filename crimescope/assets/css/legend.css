@@ -1,0 +1,133 @@
+/* ═══════════════════════════════════════════
+   legend.css — Bottom Legend Bar
+   ═══════════════════════════════════════════ */
+
+.legend-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-2) var(--space-5);
+  background: var(--bg-void);
+  border-top: 1px solid var(--border-subtle);
+  z-index: var(--z-legend);
+  min-height: 36px;
+  opacity: 0;
+}
+
+.legend-bar.is-visible {
+  opacity: 1;
+}
+
+/* ── Node type legend items ───────────────── */
+
+.legend-nodes {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: 10px;
+  font-family: var(--font-body);
+  color: var(--text-muted);
+  letter-spacing: 0.02em;
+}
+
+.legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* ── Divider ──────────────────────────────── */
+
+.legend-divider {
+  width: 1px;
+  height: 16px;
+  background: var(--border-subtle);
+  flex-shrink: 0;
+}
+
+/* ── Edge type legend ─────────────────────── */
+
+.legend-edges {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.legend-edge-line {
+  display: inline-block;
+  width: 16px;
+  height: 0;
+  border-top: 1px solid var(--edge-default);
+  vertical-align: middle;
+}
+
+.legend-edge-directed {
+  display: inline-block;
+  width: 16px;
+  height: 0;
+  border-top: 1px solid var(--edge-default);
+  vertical-align: middle;
+  position: relative;
+}
+
+.legend-edge-directed::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: -3px;
+  width: 0;
+  height: 0;
+  border-left: 4px solid var(--edge-default);
+  border-top: 3px solid transparent;
+  border-bottom: 3px solid transparent;
+}
+
+.legend-edge-bi {
+  display: inline-block;
+  width: 16px;
+  height: 0;
+  border-top: 1px solid var(--edge-default);
+  vertical-align: middle;
+  position: relative;
+}
+
+.legend-edge-bi::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: -3px;
+  width: 0;
+  height: 0;
+  border-right: 4px solid var(--edge-default);
+  border-top: 3px solid transparent;
+  border-bottom: 3px solid transparent;
+}
+
+.legend-edge-bi::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: -3px;
+  width: 0;
+  height: 0;
+  border-left: 4px solid var(--edge-default);
+  border-top: 3px solid transparent;
+  border-bottom: 3px solid transparent;
+}
+
+/* ── Attribution ──────────────────────────── */
+
+.legend-attr {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--text-muted);
+  font-family: var(--font-display);
+  letter-spacing: 0.08em;
+}

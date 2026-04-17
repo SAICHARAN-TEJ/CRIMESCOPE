@@ -1,0 +1,121 @@
+/* ═══════════════════════════════════════════
+   layout.css — Grid, Flex, Responsive Breakpoints
+   ═══════════════════════════════════════════ */
+
+/* ── CrimeScope Application Shell ─────────── */
+
+.crimescope-app {
+  position: relative;
+  width: 100%;
+  height: 100vh;
+  min-height: 600px;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  grid-template-columns: 1fr;
+  overflow: hidden;
+  background: var(--bg-canvas);
+}
+
+/* ── Graph Area ───────────────────────────── */
+
+.graph-area {
+  position: relative;
+  grid-row: 2;
+  grid-column: 1;
+  overflow: hidden;
+}
+
+/* ── Empty State ──────────────────────────── */
+
+.graph-empty {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  z-index: var(--z-labels);
+}
+
+.graph-empty p {
+  font-family: var(--font-display);
+  font-size: 14px;
+  color: var(--text-muted);
+  margin-bottom: var(--space-4);
+}
+
+/* ── Responsive: mobile (<768px) ──────────── */
+
+@media (max-width: 767px) {
+  .crimescope-app {
+    height: 100dvh;
+  }
+
+  .topbar__brand-sub {
+    display: none;
+  }
+
+  .topbar__stats {
+    display: none;
+  }
+
+  .search-wrapper {
+    flex: 0 0 36px;
+  }
+
+  .search-input {
+    width: 0;
+    padding: 0;
+    opacity: 0;
+    transition: width var(--duration-slow) var(--ease-out-expo),
+                opacity var(--duration-mid) ease,
+                padding var(--duration-slow) var(--ease-out-expo);
+  }
+
+  .search-wrapper.is-expanded .search-input {
+    width: 160px;
+    padding: var(--space-2) var(--space-3);
+    padding-left: 28px;
+    opacity: 1;
+  }
+
+  .legend-bar {
+    display: none;
+  }
+
+  .detail-panel {
+    top: auto;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    width: 100%;
+    height: 60vh;
+    transform: translateY(100%);
+    border-left: none;
+    border-top: 1px solid var(--border-subtle);
+    border-radius: 12px 12px 0 0;
+  }
+
+  .detail-panel.is-open {
+    transform: translateY(0);
+  }
+}
+
+/* ── Responsive: tablet (768–1024px) ──────── */
+
+@media (min-width: 768px) and (max-width: 1024px) {
+  :root {
+    --panel-width: 300px;
+  }
+
+  .topbar__brand-sub {
+    display: none;
+  }
+}
+
+/* ── Responsive: desktop (>1024px) ────────── */
+
+@media (min-width: 1025px) {
+  :root {
+    --panel-width: 340px;
+  }
+}

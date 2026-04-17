@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CrimeScope — Graph Intelligence Platform | Shader</title>
+  <meta name="description" content="Multi-agent swarm relationship visualization for investigative analytics. Built on OASIS simulation architecture." />
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&family=Space+Grotesk:wght@400;600;700&display=swap" rel="stylesheet" />
+
+  <!-- D3.js v7 loaded via ES module import in JS -->
+
+  <!-- Stylesheets — order matters -->
+  <link rel="stylesheet" href="assets/css/base.css" />
+  <link rel="stylesheet" href="assets/css/layout.css" />
+  <link rel="stylesheet" href="assets/css/animations.css" />
+  <link rel="stylesheet" href="assets/css/topbar.css" />
+  <link rel="stylesheet" href="assets/css/graph.css" />
+  <link rel="stylesheet" href="assets/css/panel.css" />
+  <link rel="stylesheet" href="assets/css/legend.css" />
+  <link rel="stylesheet" href="assets/css/shader-sections.css" />
+</head>
+<body>
+
+  <!-- ═══════════════════════════════════════════
+       SHADER.SE SITE NAVIGATION
+  ═══════════════════════════════════════════ -->
+  <header class="site-nav" role="banner">
+    <div class="site-nav__logo">Shader</div>
+    <nav class="site-nav__links" aria-label="Primary navigation">
+      <a href="#home">Home</a>
+      <a href="#work">Selected Work</a>
+      <a href="#about">About Us</a>
+      <a href="#contact">Contact</a>
+    </nav>
+    <a class="site-nav__cta" href="https://cal.com/simon-hedlund-kglzne" target="_blank" rel="noopener">Book a call</a>
+  </header>
+
+  <!-- ═══════════════════════════════════════════
+       SHADER.SE HERO SECTION
+  ═══════════════════════════════════════════ -->
+  <section class="hero" id="home" aria-label="Hero">
+    <h1 class="hero__headline">A Creative Development Studio,<br />Plugged into the Future</h1>
+    <p class="hero__sub">Scroll to inspect our selected work</p>
+    <div class="hero__scroll-cue" aria-hidden="true">↓</div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════
+       SELECTED WORK HEADING
+  ═══════════════════════════════════════════ -->
+  <section class="work-intro" id="work" aria-label="Selected work introduction">
+    <span class="work-intro__label">Selected Work</span>
+    <h2 class="work-intro__title">CrimeScope — Graph Intelligence Platform</h2>
+    <p class="work-intro__description">
+      Multi-agent swarm relationship visualization for investigative analytics.
+      Built on OASIS simulation architecture — thousands of autonomous agents
+      with independent memory, behavioral logic, and evolving social relationships,
+      rendered in real time as a navigable intelligence graph.
+    </p>
+  </section>
+
+  <!-- ═══════════════════════════════════════════
+       CRIMESCOPE APPLICATION SHELL
+  ═══════════════════════════════════════════ -->
+  <div class="crimescope-app" id="crimescope" role="application" aria-label="CrimeScope graph intelligence platform">
+
+    <!-- TOP CONTROL BAR -->
+    <div class="topbar" role="toolbar" aria-label="Graph controls">
+      <div class="topbar__brand">
+        <span class="topbar__brand-name">CRIMESCOPE</span>
+        <span class="topbar__brand-sub">Graph Relationship Intelligence Platform</span>
+      </div>
+
+      <div class="topbar__stats" aria-live="polite" aria-label="Graph statistics">
+        <span class="stat-badge">Nodes: <strong id="stat-nodes">—</strong></span>
+        <span class="stat-badge">Edges: <strong id="stat-edges">—</strong></span>
+        <span class="stat-badge">Clusters: <strong id="stat-clusters">—</strong></span>
+      </div>
+
+      <div class="topbar__controls">
+        <div class="search-wrapper">
+          <input
+            type="search"
+            class="search-input"
+            id="search-input"
+            placeholder="Search nodes…"
+            autocomplete="off"
+            aria-label="Search graph nodes"
+          />
+          <span class="search-icon" aria-hidden="true">⌕</span>
+        </div>
+
+        <div class="filter-wrapper">
+          <button class="filter-toggle" aria-haspopup="listbox" aria-expanded="false" id="filter-toggle">
+            All Types <span class="filter-toggle__arrow" aria-hidden="true">▾</span>
+          </button>
+          <div class="filter-dropdown" id="filter-dropdown" role="listbox" aria-label="Filter node types" hidden>
+            <!-- Populated by interactions.js -->
+          </div>
+        </div>
+
+        <button class="btn-ghost" id="zoom-reset" aria-label="Reset graph view">Reset View</button>
+
+        <button class="btn-ghost btn-sim" id="btn-sim-toggle" aria-label="Toggle simulation" aria-pressed="true">
+          <span class="sim-icon" aria-hidden="true">⏸</span>
+          <span class="sim-label">Pause</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- GRAPH CANVAS AREA -->
+    <main class="graph-area" id="graph-area" aria-label="Force-directed relationship graph">
+      <svg class="graph-svg" id="graph-svg" aria-hidden="true">
+        <!-- All SVG content injected by renderer.js -->
+      </svg>
+
+      <!-- Zoom controls -->
+      <div class="zoom-controls" aria-label="Zoom controls">
+        <button class="zoom-btn" id="zoom-in" aria-label="Zoom in">+</button>
+        <button class="zoom-btn" id="zoom-out" aria-label="Zoom out">−</button>
+      </div>
+
+      <!-- Empty state -->
+      <div class="graph-empty" id="graph-empty" hidden aria-live="polite">
+        <p>No nodes match the current filters.</p>
+        <button class="btn-ghost" id="clear-filters">Clear Filters</button>
+      </div>
+    </main>
+
+    <!-- RIGHT SIDE DETAIL PANEL -->
+    <aside class="detail-panel" id="detail-panel" aria-label="Node or relationship details" aria-hidden="true">
+      <button class="panel-close" aria-label="Close detail panel">×</button>
+      <div class="detail-panel__inner">
+        <!-- Content injected by panel.js -->
+      </div>
+    </aside>
+
+    <!-- BOTTOM LEGEND BAR -->
+    <footer class="legend-bar" role="contentinfo" aria-label="Graph legend">
+      <div class="legend-nodes" aria-label="Node types">
+        <span class="legend-item"><span class="legend-dot" style="background:#c8ff00"></span> Person</span>
+        <span class="legend-item"><span class="legend-dot" style="background:#ff6b35"></span> Organization</span>
+        <span class="legend-item"><span class="legend-dot" style="background:#00d4aa"></span> Event</span>
+        <span class="legend-item"><span class="legend-dot" style="background:#6b8aff"></span> Location</span>
+        <span class="legend-item"><span class="legend-dot" style="background:#ff4081"></span> Evidence</span>
+      </div>
+      <div class="legend-divider" aria-hidden="true"></div>
+      <div class="legend-edges" aria-label="Edge types">
+        <span class="legend-item">
+          <span class="legend-edge-line" aria-hidden="true"></span> Relationship
+        </span>
+        <span class="legend-item">
+          <span class="legend-edge-directed" aria-hidden="true"></span> Directed
+        </span>
+        <span class="legend-item">
+          <span class="legend-edge-bi" aria-hidden="true"></span> Bidirectional
+        </span>
+      </div>
+      <span class="legend-attr" aria-label="Attribution">Shader × CrimeScope</span>
+    </footer>
+
+  </div><!-- /.crimescope-app -->
+
+  <!-- ═══════════════════════════════════════════
+       SHADER.SE ABOUT / COPY SECTION
+  ═══════════════════════════════════════════ -->
+  <section class="shader-copy" id="about" aria-label="About this project">
+    <div class="shader-copy__inner">
+      <h3 class="shader-copy__title">What We Actually Built</h3>
+      <p>
+        CrimeScope is a swarm intelligence visualization layer on top of the OASIS multi-agent
+        simulation engine. We took hundreds of autonomous agents — each with independent personality
+        profiles, long-term memory, and behavioral logic — and gave investigators a way to see
+        them all at once. Every node is an entity. Every edge is a proven relationship.
+        Every click reveals the intelligence underneath.
+      </p>
+      <p>
+        We don't troubleshoot printers. We build things like this.
+      </p>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════
+       SHADER.SE CONTACT SECTION
+  ═══════════════════════════════════════════ -->
+  <section class="contact-section" id="contact" aria-label="Contact Shader">
+    <h2 class="contact-section__heading">Contact</h2>
+    <p class="contact-section__sub">
+      Contact us about your digital project idea or general enquiries. Let's interface.
+    </p>
+    <div class="contact-grid">
+      <div class="contact-col">
+        <span class="contact-label">General Enquiries</span>
+        <a href="mailto:hello@shader.se" class="contact-link">hello@shader.se</a>
+        <a href="https://cal.com/simon-hedlund-kglzne" class="btn-primary" target="_blank" rel="noopener">Book a call</a>
+      </div>
+      <div class="contact-col">
+        <span class="contact-label">Visit us</span>
+        <address class="contact-address">
+          Laxholmstorget 3<br />602 21 Norrköping<br />Sweden
+        </address>
+      </div>
+      <div class="contact-col">
+        <span class="contact-label">Social</span>
+        <a href="https://www.linkedin.com/company/shadersweden/" class="contact-link" target="_blank" rel="noopener">LinkedIn</a>
+        <a href="https://www.instagram.com/shadersweden/" class="contact-link" target="_blank" rel="noopener">Instagram</a>
+        <a href="https://x.com/shadersweden" class="contact-link" target="_blank" rel="noopener">X (Twitter)</a>
+      </div>
+      <div class="contact-col">
+        <span class="contact-label">New Business</span>
+        <a href="mailto:ceo@shader.se" class="contact-link">ceo@shader.se</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════
+       SITE FOOTER
+  ═══════════════════════════════════════════ -->
+  <footer class="site-footer" role="contentinfo">
+    <span>© 2026 Shader AB. All rights reserved.</span>
+    <a href="/accessibility-statement" class="site-footer__link">Accessibility Statement</a>
+  </footer>
+
+  <!-- ═══════════════════════════════════════════
+       JAVASCRIPT — module entry
+  ═══════════════════════════════════════════ -->
+  <script type="module" src="assets/js/app.js"></script>
+
+</body>
+</html>
