@@ -1,58 +1,52 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import Home from '../views/Home.vue'
-import Process from '../views/MainView.vue'
-import SimulationView from '../views/SimulationView.vue'
-import SimulationRunView from '../views/SimulationRunView.vue'
-import ReportView from '../views/ReportView.vue'
-import InteractionView from '../views/InteractionView.vue'
-import CrimeScopeView from '../views/CrimeScopeView.vue'
+
+const LandingView = () => import('../views/LandingView.vue')
+const AppView = () => import('../views/AppView.vue')
+const NewSimulationView = () => import('../views/NewSimulationView.vue')
+const NotFoundView = () => import('../views/NotFoundView.vue')
 
 const routes = [
   {
     path: '/',
-    name: 'Home',
-    component: Home
+    name: 'Landing',
+    component: LandingView,
+    meta: { transition: 'fade' }
   },
   {
-    path: '/crimescope',
-    name: 'CrimeScope',
-    component: CrimeScopeView
+    path: '/app',
+    name: 'App',
+    component: AppView,
+    meta: { transition: 'slide' },
+    children: [
+      { path: '', redirect: { name: 'AppOverview' } },
+      { path: 'overview', name: 'AppOverview', meta: { tab: 'overview' } },
+      { path: 'simulation', name: 'AppSimulation', meta: { tab: 'simulation' } },
+      { path: 'agents', name: 'AppAgents', meta: { tab: 'agents' } },
+      { path: 'report', name: 'AppReport', meta: { tab: 'report' } },
+      { path: 'chat', name: 'AppChat', meta: { tab: 'chat' } }
+    ]
   },
   {
-    path: '/process/:projectId',
-    name: 'Process',
-    component: Process,
-    props: true
+    path: '/new',
+    name: 'NewSimulation',
+    component: NewSimulationView,
+    meta: { transition: 'slide' }
   },
   {
-    path: '/simulation/:simulationId',
-    name: 'Simulation',
-    component: SimulationView,
-    props: true
-  },
-  {
-    path: '/simulation/:simulationId/start',
-    name: 'SimulationRun',
-    component: SimulationRunView,
-    props: true
-  },
-  {
-    path: '/report/:reportId',
-    name: 'Report',
-    component: ReportView,
-    props: true
-  },
-  {
-    path: '/interaction/:reportId',
-    name: 'Interaction',
-    component: InteractionView,
-    props: true
+    path: '/:pathMatch(.*)*',
+    name: 'NotFound',
+    component: NotFoundView,
+    meta: { transition: 'fade' }
   }
 ]
 
 const router = createRouter({
   history: createWebHistory(),
-  routes
+  routes,
+  scrollBehavior(to, from, savedPosition) {
+    if (savedPosition) return savedPosition
+    return { top: 0, behavior: 'smooth' }
+  }
 })
 
 export default router
