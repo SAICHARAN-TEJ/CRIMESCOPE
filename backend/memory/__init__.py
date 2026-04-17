@@ -1,1 +1,1 @@
-"""Memory package init."""
+# memory package

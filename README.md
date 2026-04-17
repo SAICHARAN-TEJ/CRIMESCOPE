@@ -1,203 +1,148 @@
 <div align="center">
-
-<img src="./static/image/MiroFish_logo_compressed.jpeg" alt="MiroFish Logo" width="75%"/>
-
-<a href="https://trendshift.io/repositories/16144" target="_blank"><img src="https://trendshift.io/api/badge/repositories/16144" alt="666ghj%2FMiroFish | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
-
-A simple and universal swarm intelligence engine, predicting anything
-</br>
-<em>A Simple and Universal Swarm Intelligence Engine, Predicting Anything</em>
-
-<a href="https://www.shanda.com/" target="_blank"><img src="./static/image/shanda_logo.png" alt="666ghj%2MiroFish | Shanda" height="40"/></a>
-
-[![GitHub Stars](https://img.shields.io/github/stars/666ghj/MiroFish?style=flat-square&color=DAA520)](https://github.com/666ghj/MiroFish/stargazers)
-[![GitHub Watchers](https://img.shields.io/github/watchers/666ghj/MiroFish?style=flat-square)](https://github.com/666ghj/MiroFish/watchers)
-[![GitHub Forks](https://img.shields.io/github/forks/666ghj/MiroFish?style=flat-square)](https://github.com/666ghj/MiroFish/network)
-[![Docker](https://img.shields.io/badge/Docker-Build-2496ED?style=flat-square&logo=docker&logoColor=white)](https://hub.docker.com/)
-[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/666ghj/MiroFish)
-
-[![Discord](https://img.shields.io/badge/Discord-Join-5865F2?style=flat-square&logo=discord&logoColor=white)](http://discord.gg/ePf5aPaHnA)
-[![X](https://img.shields.io/badge/X-Follow-000000?style=flat-square&logo=x&logoColor=white)](https://x.com/mirofish_ai)
-[![Instagram](https://img.shields.io/badge/Instagram-Follow-E4405F?style=flat-square&logo=instagram&logoColor=white)](https://www.instagram.com/mirofish_ai/)
-
-[English](./README.md) | [Chinese Documentation](./README-ZH.md)
-
+  <img src="./docs/assets/logo.png" alt="CrimeScope Logo" width="250"/>
 </div>
 
-## ⚡ Overview
+# CrimeScope — Graph Intelligence Platform
 
-**MiroFish** is a next-generation AI prediction engine powered by multi-agent technology. By extracting seed information from the real world (such as breaking news, policy drafts, or financial signals), it automatically constructs a high-fidelity parallel digital world. Within this space, thousands of intelligent agents with independent personalities, long-term memory, and behavioral logic freely interact and undergo social evolution. You can inject variables dynamically from a "God's-eye view" to precisely deduce future trajectories — **rehearse the future in a digital sandbox, and win decisions after countless simulations**.
+<br/>
 
-> You only need to: Upload seed materials (data analysis reports or interesting novel stories) and describe your prediction requirements in natural language</br>
-> MiroFish will return: A detailed prediction report and a deeply interactive high-fidelity digital world
+> **1,000 AI agents. 8 cognitive archetypes. 30 rounds of adversarial reasoning. One probable cause.**
 
-### Our Vision
-
-MiroFish is dedicated to creating a swarm intelligence mirror that maps reality. By capturing the collective emergence triggered by individual interactions, we break through the limitations of traditional prediction:
-
-- **At the Macro Level**: We are a rehearsal laboratory for decision-makers, allowing policies and public relations to be tested at zero risk
-- **At the Micro Level**: We are a creative sandbox for individual users — whether deducing novel endings or exploring imaginative scenarios, everything can be fun, playful, and accessible
-
-From serious predictions to playful simulations, we let every "what if" see its outcome, making it possible to predict anything.
-
-## 🌐 Live Demo
-
-Welcome to visit our online demo environment and experience a prediction simulation on trending public opinion events we've prepared for you: [mirofish-live-demo](https://666ghj.github.io/mirofish-demo/)
-
-## 📸 Screenshots
+**CrimeScope** is a premier multi-agent swarm intelligence engine built for criminal event reconstruction and forensic analysis. Using cognitive diversity routing across the most advanced OpenRouter LLMs, it spawns 1,000 highly specialised AI agents that collaboratively process evidence, formulate causal hypotheses, and debate to converge on a single, probable cause.
 
 <div align="center">
-<table>
-<tr>
-<td><img src="./static/image/Screenshot/run-screenshot-1.png" alt="Screenshot 1" width="100%"/></td>
-<td><img src="./static/image/Screenshot/run-screenshot-2.png" alt="Screenshot 2" width="100%"/></td>
-</tr>
-<tr>
-<td><img src="./static/image/Screenshot/run-screenshot-3.png" alt="Screenshot 3" width="100%"/></td>
-<td><img src="./static/image/Screenshot/run-screenshot-4.png" alt="Screenshot 4" width="100%"/></td>
-</tr>
-<tr>
-<td><img src="./static/image/Screenshot/run-screenshot-5.png" alt="Screenshot 5" width="100%"/></td>
-<td><img src="./static/image/Screenshot/run-screenshot-6.png" alt="Screenshot 6" width="100%"/></td>
-</tr>
-</table>
+  <img src="./docs/assets/home.webp" alt="CrimeScope Dashboard" width="800" style="border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);"/>
 </div>
 
-## 🎬 Demo Videos
+<br/>
 
-### 1. Wuhan University Public Opinion Simulation + MiroFish Project Introduction
+## 🏛️ Architecture & System Topology
+
+CrimeScope relies on a decoupled, microservices-oriented architecture designed to handle 30 rounds of concurrent multi-agent simulations seamlessly.
+
+```
+┌─────────────────┐       ┌─────────────────┐       ┌─────────────────┐
+│   Website       │       │   Frontend      │       │   Backend       │
+│   (Port 8080)   │       │   (Port 3000)   │       │   (Port 5001)   │
+│   Marketing     │       │   Vue 3 + D3    │       │   FastAPI       │
+└────────┬────────┘       └────────┬────────┘       └─────────┬───────┘
+         │                         │ /api/v1                  │
+         └─────────────────────────┴──────────────────────────┘
+                                   │
+                      ┌────────────┼────────────┐
+                      │            │            │
+               ┌──────┴──┐   ┌─────┴────┐   ┌───┴──────┐
+               │  Neo4j  │   │ ChromaDB │   │ Supabase │
+               │  Graph  │   │  Memory  │   │   BaaS   │
+               └─────────┘   └──────────┘   └──────────┘
+```
+
+## 🛠️ Technology Stack
+
+| Ecosystem | Technology | Purpose |
+|---|---|---|
+| **Intelligence** | DeepSeek V3/R1, Llama 3.3, Gemini 2.5 Pro | OpenRouter model rotation ensures cognitive diversity |
+| **Backend API** | FastAPI (Python 3.11) | High-performance async simulation engine |
+| **Knowledge Graph**| Neo4j 5 | Stores entities, evidence, and event timelines |
+| **Episodic Memory**| ChromaDB | Agent-specific isolated vector memory spaces |
+| **BaaS / State** | Supabase (Postgres) | Persists tracking, snapshots, and auth |
+| **Visualization** | Vue 3, Pinia, D3.js v7 | High fidelity, interactive force-directed graph |
+| **Web Presence** | Vanilla HTML, CSS, GSAP 3 | Premium, particle-animated marketing landing page |
+
+## 🧠 Cognitive Archetypes
+
+The core of the swarm is divided into 8 distinct epistemic biases to prevent groupthink.
+
+| Archetype | Allocation | Primary Model | Persona Focus |
+|---|---|---|---|
+| **Forensic Analyst** | 120 agents | DeepSeek V3 | Physical evidence and procedural integrity |
+| **Behavioral Profiler** | 100 agents | DeepSeek R1 | Psychological markers and intent |
+| **Eyewitness Simulator** | 150 agents | DeepSeek V3 | Observation error modelling / bias testing |
+| **Suspect Persona** | 200 agents | DeepSeek V3 | Defensive, deceptive, testing weaknesses |
+| **Alibi Verifier** | 80 agents | DeepSeek V3 | Timeline gap analysis |
+| **Scene Reconstructor** | 120 agents | DeepSeek V3 | Spatial logistics and movement restrictions |
+| **Statistical Baseline** | 130 agents | Llama 3.3 | Base-rate Bayesian reasoning |
+| **Contradiction Detector** | 100 agents | DeepSeek R1 | Logic gate inconsistency hunting |
+
+<br/>
 
 <div align="center">
-<a href="https://www.bilibili.com/video/BV1VYBsBHEMY/" target="_blank"><img src="./static/image/wuhan-demo-cover.png" alt="MiroFish Demo Video" width="75%"/></a>
-
-Click the image to watch the complete demo video for prediction using BettaFish-generated "Wuhan University Public Opinion Report"
+  <img src="./docs/assets/graph.png" alt="CrimeScope Graph Knowledge Visualization" width="800" style="border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);"/>
 </div>
 
-### 2. Dream of the Red Chamber Lost Ending Simulation
-
-<div align="center">
-<a href="https://www.bilibili.com/video/BV1cPk3BBExq" target="_blank"><img src="./static/image/dream-red-chamber-cover.jpg" alt="MiroFish Demo Video" width="75%"/></a>
-
-Click the image to watch MiroFish's deep prediction of the lost ending based on hundreds of thousands of words from the first 80 chapters of "Dream of the Red Chamber"
-</div>
-
-> **Financial Prediction**, **Political News Prediction** and more examples coming soon...
-
-## 🔄 Workflow
-
-1. **Graph Building**: Seed extraction & Individual/collective memory injection & GraphRAG construction
-2. **Environment Setup**: Entity relationship extraction & Persona generation & Agent configuration injection
-3. **Simulation**: Dual-platform parallel simulation & Auto-parse prediction requirements & Dynamic temporal memory updates
-4. **Report Generation**: ReportAgent with rich toolset for deep interaction with post-simulation environment
-5. **Deep Interaction**: Chat with any agent in the simulated world & Interact with ReportAgent
+<br/>
 
 ## 🚀 Quick Start
 
-### Option 1: Source Code Deployment (Recommended)
-
-#### Prerequisites
-
-| Tool | Version | Description | Check Installation |
-|------|---------|-------------|-------------------|
-| **Node.js** | 18+ | Frontend runtime, includes npm | `node -v` |
-| **Python** | ≥3.11, ≤3.12 | Backend runtime | `python --version` |
-| **uv** | Latest | Python package manager | `uv --version` |
-
-#### 1. Configure Environment Variables
+Ensure Docker and Docker Compose are installed on your system.
 
 ```bash
-# Copy the example configuration file
+# 1. Clone the repository
+git clone https://github.com/SAICHARAN-TEJ/CRIMESCOPE.git
+cd CRIMESCOPE
+
+# 2. Configure Environment
 cp .env.example .env
+# Important: Add your OpenRouter API key and Supabase credentials in .env
 
-# Edit the .env file and fill in the required API keys
+# 3. Boot the environment
+docker compose up --build
 ```
+**Access Points:**
+- **Dashboard Frontend:** `http://localhost:3000`
+- **Marketing Site:** `http://localhost:8080`
+- **API Backend:** `http://localhost:5001`
+- **Neo4j Browser:** `http://localhost:7474`
 
-**Required Environment Variables:**
 
-```env
-# LLM API Configuration (supports any LLM API with OpenAI SDK format)
-# Recommended: Alibaba Qwen-plus model via Bailian Platform: https://bailian.console.aliyun.com/
-# High consumption, try simulations with fewer than 40 rounds first
-LLM_API_KEY=your_api_key
-LLM_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
-LLM_MODEL_NAME=qwen-plus
+## 🖥️ Local Development (Without Docker)
 
-# Zep Cloud Configuration
-# Free monthly quota is sufficient for simple usage: https://app.getzep.com/
-ZEP_API_KEY=your_zep_api_key
-```
-
-#### 2. Install Dependencies
+CrimeScope is designed with a **Resilient Configuration Architecture**. It will automatically fall back to **Demo Mode** if external services (Supabase, Neo4j, LLMs) are gracefully unavailable, preventing hard crashes.
 
 ```bash
-# One-click installation of all dependencies (root + frontend + backend)
-npm run setup:all
-```
+# Backend Setup
+cd backend
+pip install -e .
+uvicorn backend.main:app --reload --port 5001
 
-Or install step by step:
-
-```bash
-# Install Node dependencies (root + frontend)
-npm run setup
-
-# Install Python dependencies (backend, auto-creates virtual environment)
-npm run setup:backend
-```
-
-#### 3. Start Services
-
-```bash
-# Start both frontend and backend (run from project root)
+# Frontend Setup
+cd frontend
+npm install
 npm run dev
+
+# Marketing Website Setup
+cd website
+npx serve .
 ```
 
-**Service URLs:**
-- Frontend: `http://localhost:3000`
-- Backend API: `http://localhost:5001`
+## 📡 Core API References
 
-**Start Individually:**
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/api/v1/health` | Service health and configuration validation |
+| `POST` | `/api/v1/cases` | Initiate a new investigation |
+| `GET` | `/api/v1/cases` | Retrieve investigation history |
+| `POST` | `/api/v1/simulate/:id` | Launch swarm simulation |
+| `GET` | `/api/v1/simulate/:id/stream` | Multi-agent SSE feed |
+| `GET` | `/api/v1/graph/:id` | Serialize graph for D3 consumption |
+| `GET` | `/api/v1/report/:id` | Comprehensive Probable Cause Export |
 
-```bash
-npm run backend   # Start backend only
-npm run frontend  # Start frontend only
-```
+## 📂 Demo Case: Harlow Street
 
-### Option 2: Docker Deployment
+The app natively includes a pre-built demo case: **Harlow Street**. 
+A pharmacist vanishes from a multi-story parking garage during a 22-minute CCTV blind spot. 
 
-```bash
-# 1. Configure environment variables (same as source deployment)
-cp .env.example .env
-
-# 2. Pull image and start
-docker compose up -d
-```
-
-Reads `.env` from root directory by default, maps ports `3000 (frontend) / 5001 (backend)`
-
-> Mirror address for faster pulling is provided as comments in `docker-compose.yml`, replace if needed.
-
-## 📬 Join the Conversation
+**Demo features:**
+- **18 Graph Entities**: Interactive D3 mapping of persons, locations, items, and events.
+- **16 Relationship Edges**: Weighted interactions indicating certainty degrees.
+- **10 Core Inquiries**: Provided to the swarm as investigative seeds.
+- **4 Hypothesis Matrices**: Generated for adversarial team assessment.
 
 <div align="center">
-<img src="./static/image/community-group.png" alt="Community Group" width="60%"/>
+  <img src="./docs/assets/report.png" alt="CrimeScope Final Cause Report" width="800" style="border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);"/>
 </div>
 
-&nbsp;
+<br/>
 
-The MiroFish team is recruiting full-time/internship positions. If you're interested in multi-agent simulation and LLM applications, feel free to send your resume to: **mirofish@shanda.com**
-
-## 📄 Acknowledgments
-
-**MiroFish has received strategic support and incubation from Shanda Group!**
-
-MiroFish's simulation engine is powered by **[OASIS (Open Agent Social Interaction Simulations)](https://github.com/camel-ai/oasis)**, We sincerely thank the CAMEL-AI team for their open-source contributions!
-
-## 📈 Project Statistics
-
-<a href="https://www.star-history.com/#666ghj/MiroFish&type=date&legend=top-left">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=666ghj/MiroFish&type=date&theme=dark&legend=top-left" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=666ghj/MiroFish&type=date&legend=top-left" />
-   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=666ghj/MiroFish&type=date&legend=top-left" />
- </picture>
-</a>
+## ⚖️ License
+Licensed under the **MIT License**.

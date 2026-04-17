@@ -1,55 +1,21 @@
 [project]
 name = "crimescope-backend"
-version = "0.1.0"
-description = "CrimeScope — Criminal event reconstruction engine powered by swarm intelligence"
+version = "1.2.0"
+description = "CrimeScope Swarm Intelligence Engine"
 requires-python = ">=3.11"
-license = { text = "AGPL-3.0" }
-authors = [
-    { name = "CrimeScope" }
-]
-
 dependencies = [
-    # core framework
-    "flask>=3.0.0",
-    "flask-cors>=6.0.0",
-    
-    # LLM Related
-    "openai>=1.0.0",
-    
-    # Zep Cloud
-    "zep-cloud==3.13.0",
-    
-    # OASIS social media simulation
-    "camel-oasis==0.2.5",
-    "camel-ai==0.2.78",
-    
-    # File processing
-    "PyMuPDF>=1.24.0",
-    # Encoding detection（Support nonUTF-8encoded text file）
-    "charset-normalizer>=3.0.0",
-    "chardet>=5.0.0",
-    
-    # Tool library
+    "fastapi>=0.104.0",
+    "uvicorn[standard]>=0.24.0",
+    "pydantic>=2.5.0",
+    "pydantic-settings>=2.1.0",
+    "httpx>=0.25.0",
+    "supabase>=2.0.0",
+    "neo4j>=5.14.0",
+    "chromadb>=0.4.18",
+    "python-multipart>=0.0.6",
     "python-dotenv>=1.0.0",
-    "pydantic>=2.0.0",
-]
-
-[project.optional-dependencies]
-dev = [
-    "pytest>=8.0.0",
-    "pytest-asyncio>=0.23.0",
-    "pipreqs>=0.5.0",
 ]
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
-
-[dependency-groups]
-dev = [
-    "pytest>=8.0.0",
-    "pytest-asyncio>=0.23.0",
-]
-
-[tool.hatch.build.targets.wheel]
-packages = ["app"]

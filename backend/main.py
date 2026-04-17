@@ -1,107 +1,98 @@
 """
-CRIMESCOPE v2 — FastAPI application factory.
+CrimeScope API — FastAPI application entry point.
 
-Creates and configures the FastAPI app with:
-- CORS middleware
-- All API routers
-- Startup/shutdown lifecycle hooks
-- Structured logging
+Start with:  uvicorn backend.main:app --reload --port 5001
 """
 
 from __future__ import annotations
 
-import sys
-import os
+import time
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-import structlog
+from backend.config import settings, Settings
+from backend.utils.logger import get_logger
 
-from core.config import get_settings
-from core.logger import setup_logging
-from core.state import load_all_simulations
-from memory.zep_manager import get_memory_manager
+logger = get_logger("crimescope.main")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Application lifecycle: startup and shutdown hooks."""
-    log = structlog.get_logger("crimescope.app")
+    """Startup / shutdown lifecycle — resilient to missing services."""
+    # ── Startup banner ────────────────────────────────────────────────
+    logger.info("=" * 50)
+    logger.info("  CrimeScope Swarm Intelligence Engine v1.3.0")
+    logger.info("=" * 50)
 
-    # ── STARTUP ──────────────────────────────────────────────
-    settings = get_settings()
+    # Validate config
+    warnings = Settings.validate_config(settings)
+    if warnings:
+        for w in warnings:
+            logger.warning(f"  ⚠ {w}")
+        logger.info("  → Running in DEMO mode (external services unavailable)")
+    else:
+        logger.info("  ✓ All services configured")
 
-    # Validate configuration
-    errors = settings.validate_required()
-    if errors:
-        for err in errors:
-            log.error("config_error", detail=err)
-        log.warning("starting_with_config_warnings", errors=len(errors))
+    # Neo4j — optional, don't crash if unavailable
+    neo4j_ok = False
+    try:
+        from backend.graph.neo4j_client import neo4j_client
+        await neo4j_client.connect()
+        neo4j_ok = True
+        logger.info("  ✓ Neo4j connected")
+    except Exception as e:
+        logger.warning(f"  ⚠ Neo4j unavailable: {e} — graph queries will use demo data")
 
-    # Hydrate simulation state from disk
-    await load_all_simulations()
-
-    log.info(
-        "startup_complete",
-        host=settings.host,
-        port=settings.port,
-        llm_model=settings.llm_model_name,
-        zep=bool(settings.zep_api_key),
-    )
+    logger.info("=" * 50)
 
     yield
 
-    # ── SHUTDOWN ─────────────────────────────────────────────
-    # Flush remaining Zep writes
-    mem = get_memory_manager()
-    await mem.close()
-    log.info("shutdown_complete")
+    # ── Shutdown ──────────────────────────────────────────────────────
+    if neo4j_ok:
+        try:
+            from backend.graph.neo4j_client import neo4j_client
+            await neo4j_client.close()
+            logger.info("✓ Neo4j disconnected")
+        except Exception:
+            pass
+    logger.info("CrimeScope shutdown complete")
 
 
-def create_app() -> FastAPI:
-    """Create and configure the CRIMESCOPE FastAPI application."""
+app = FastAPI(
+    title="CrimeScope API",
+    version="1.3.0",
+    description="Multi-agent swarm intelligence engine for criminal reconstruction.",
+    lifespan=lifespan,
+)
 
-    # Force UTF-8 on Windows
-    if sys.platform == "win32":
-        os.environ.setdefault("PYTHONIOENCODING", "utf-8")
-        if hasattr(sys.stdout, "reconfigure"):
-            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-        if hasattr(sys.stderr, "reconfigure"):
-            sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+# ── CORS ─────────────────────────────────────────────────────────────────
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_origins_list,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-    # Initialize structured logging
-    setup_logging()
+# ── Routers ──────────────────────────────────────────────────────────────
+from backend.routers import cases, chat, demo, graph, report, simulation, upload
 
-    settings = get_settings()
+app.include_router(cases.router, prefix="/api/v1", tags=["Cases"])
+app.include_router(simulation.router, prefix="/api/v1", tags=["Simulation"])
+app.include_router(graph.router, prefix="/api/v1", tags=["Graph"])
+app.include_router(report.router, prefix="/api/v1", tags=["Report"])
+app.include_router(upload.router, prefix="/api/v1", tags=["Upload"])
+app.include_router(chat.router, prefix="/api/v1", tags=["Chat"])
+app.include_router(demo.router, prefix="/api/v1", tags=["Demo"])
 
-    app = FastAPI(
-        title="CRIMESCOPE API",
-        description="Crime prediction & multi-agent swarm simulation engine",
-        version="2.0.0",
-        lifespan=lifespan,
-    )
 
-    # ── CORS ─────────────────────────────────────────────────
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=settings.cors_origins,
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
-
-    # ── Routers ──────────────────────────────────────────────
-    from api.health import router as health_router
-    from api.simulation import router as sim_router, list_router
-    from api.events import router as events_router
-    from api.chat import router as chat_router
-
-    app.include_router(health_router)
-    app.include_router(sim_router)
-    app.include_router(list_router)
-    app.include_router(events_router)
-    app.include_router(chat_router)
-
-    return app
+@app.get("/api/v1/health")
+async def health():
+    return {
+        "status": "ok",
+        "mode": "demo" if settings.is_demo_mode else "live",
+        "ts": time.time(),
+        "agents": settings.swarm_agent_count,
+    }

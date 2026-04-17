@@ -1,0 +1,130 @@
+/* ══════════════════════════════════════════════════════════════════════
+   CrimeScope — Global Design System (MiroFish-Inspired Light Theme)
+   Palette: White / Light-Gray / Crimson Accents
+   ══════════════════════════════════════════════════════════════════════ */
+
+/* ── Tokens ──────────────────────────────────────────────────────────── */
+:root {
+  /* surfaces */
+  --c-void:        #F5F5F5;
+  --c-canvas:      #FAFAFA;
+  --c-surface:     #FFFFFF;
+  --c-panel:       rgba(255, 255, 255, 0.96);
+
+  /* borders */
+  --c-badge:       #F0F0F0;
+  --c-border:      #EAEAEA;
+  --c-border-hi:   #C0C0C0;
+
+  /* entity colors (warm, saturated — MiroFish palette) */
+  --c-person:      #E91E63;
+  --c-location:    #1A936F;
+  --c-evidence:    #004E89;
+  --c-event:       #FF6B35;
+  --c-agent:       #9b59b6;
+
+  /* accent */
+  --c-red:         #E91E63;
+  --c-red-light:   #F06292;
+  --c-red-dim:     rgba(233, 30, 99, 0.1);
+  --c-red-glow:    rgba(233, 30, 99, 0.25);
+
+  /* secondary accents */
+  --c-amber:       #FF9800;
+  --c-amber-light: #FFB74D;
+  --c-sage:        #4CAF50;
+  --c-blue:        #2196F3;
+  --c-blue-light:  #64B5F6;
+  --c-brown:       #8D6E63;
+
+  /* text */
+  --c-text:        #333333;
+  --c-text-2:      #666666;
+  --c-text-3:      #999999;
+
+  /* typography */
+  --ff-display:    'Space Grotesk', system-ui, sans-serif;
+  --ff-body:       'Noto Sans SC', 'Inter', system-ui, sans-serif;
+  --ff-mono:       'JetBrains Mono', monospace;
+
+  /* layout */
+  --panel-w:       340px;
+  --topbar-h:      60px;
+  --ease:          cubic-bezier(0.25, 0.8, 0.25, 1);
+}
+
+/* ── Reset ───────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+
+body {
+  font-family: var(--ff-body);
+  background: var(--c-void);
+  color: var(--c-text);
+  line-height: 1.5;
+  overflow-x: hidden;
+  min-height: 100vh;
+}
+
+a { color: inherit; text-decoration: none; }
+button { cursor: pointer; font-family: inherit; }
+img { display: block; max-width: 100%; }
+
+/* ── Typography ──────────────────────────────────────────────────────── */
+h1, h2, h3, .font-display { font-family: var(--ff-display); font-weight: 600; }
+.font-mono { font-family: var(--ff-mono); }
+
+/* ── Glass panel (light mode) ────────────────────────────────────────── */
+.glass {
+  background: var(--c-panel);
+  border: 1px solid var(--c-border);
+}
+
+/* ── Badge ────────────────────────────────────────────────────────────── */
+.badge {
+  display: inline-block;
+  background: var(--c-badge);
+  border: 1px solid var(--c-border);
+  color: var(--c-text-2);
+  font-family: var(--ff-mono);
+  font-size: 10px;
+  padding: 2px 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  border-radius: 4px;
+}
+.badge--red { color: var(--c-red); border-color: var(--c-red-dim); background: var(--c-red-dim); }
+
+/* ── Buttons ─────────────────────────────────────────────────────────── */
+.btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 10px 20px;
+  font-family: var(--ff-body); font-size: 13px; font-weight: 600;
+  border: 1px solid var(--c-border);
+  background: var(--c-surface); color: var(--c-text);
+  border-radius: 6px;
+  transition: all 0.2s ease;
+}
+.btn:hover { border-color: #CCC; background: #F5F5F5; }
+.btn--primary {
+  background: var(--c-red); color: #fff;
+  border-color: var(--c-red);
+}
+.btn--primary:hover { background: var(--c-red-light); border-color: var(--c-red-light); }
+
+/* ── Scrollbar ───────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #D0D0D0; border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: #B0B0B0; }
+
+/* ── Animations ──────────────────────────────────────────────────────── */
+@keyframes pulse-red {
+  0%, 100% { box-shadow: 0 0 0 0 var(--c-red-glow); }
+  50%      { box-shadow: 0 0 0 6px rgba(233,30,99,0); }
+}
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.fade-in { animation: fade-in 0.4s var(--ease) both; }
