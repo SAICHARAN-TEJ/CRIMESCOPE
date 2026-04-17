@@ -6,6 +6,10 @@
 **/node_modules/
 frontend/dist/
 website/dist/
+app-next/.next/
+app-next/out/
+.next/
+out/
 
 # Python cache and tooling
 **/__pycache__/

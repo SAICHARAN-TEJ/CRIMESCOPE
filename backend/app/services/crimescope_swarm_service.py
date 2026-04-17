@@ -2,9 +2,10 @@
 
 This service provides:
 1. Unified seed packet validation.
-2. Configurable swarm execution (default 1000 agents, 30 rounds).
-3. Probabilistic hypothesis clustering and ranked report output.
-4. Case/report persistence via the existing file-backed model layer.
+2. Configurable swarm execution with evidence-weighted scoring.
+3. Semantic evidence alignment via EvidenceEvaluator.
+4. Probabilistic hypothesis clustering and ranked report output.
+5. Case/report persistence via the existing file-backed model layer.
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ from ..config import Config
 from ..models.crimescope_case import CrimeScopeCase, CrimeScopeCaseManager
 from ..models.task import TaskManager, TaskStatus
 from ..utils.logger import get_logger
+from .evidence_evaluator import EvidenceEvaluator
 
 
 logger = get_logger("crimescope.crimescope_swarm")
@@ -354,8 +356,32 @@ class CrimeScopeSwarmService:
     ) -> Dict[str, Any]:
         rng = random.Random(self._agent_seed(case, rounds, len(agents)) + 97)
 
+        confirmed_facts = case.seed_packet.get("confirmed_facts", [])
         disputed_facts = case.seed_packet.get("disputed_facts", [])
         contradiction_penalty = min(0.15, 0.01 * len(disputed_facts))
+
+        # --- Evidence alignment scoring (semantic layer) -------------------
+        # Pre-compute per-candidate evidence net scores once, reused every round.
+        evidence_net_scores: List[float] = []
+        for candidate in candidates:
+            support, contra = EvidenceEvaluator.score_evidence_set(
+                confirmed_facts, disputed_facts, candidate["title"]
+            )
+            # Map net score [0,1] → additive bias [-0.05, +0.10]
+            net = support - contra * 0.5
+            evidence_net_scores.append(max(-0.05, min(0.10, net * 0.15)))
+
+        # Archetype-to-specialisation affinity boosts
+        _ARCHETYPE_AFFINITY: Dict[str, Dict[int, float]] = {
+            "forensic_analyst":        {0: 0.07, 2: 0.03},
+            "behavioral_profiler":     {1: 0.06, 3: 0.03},
+            "contradiction_detector":  {1: 0.08, 2: 0.06},
+            "eyewitness_simulator":    {0: 0.04, 3: -0.02},
+            "suspect_persona":         {2: 0.05, 3: 0.04},
+            "alibi_verifier":          {0: 0.05, 1: 0.03},
+            "crime_scene_reconstructor": {0: 0.06, 2: 0.04},
+            "statistical_baseline":    {4: -0.04},
+        }
 
         round_probabilities: List[List[float]] = []
         final_supporters: List[List[SwarmAgent]] = [[] for _ in candidates]
@@ -366,23 +392,17 @@ class CrimeScopeSwarmService:
 
             for agent in agents:
                 scores: List[float] = []
-                for index, candidate in enumerate(candidates):
-                    archetype_bias = 0.0
-                    if agent.archetype == "contradiction_detector":
-                        archetype_bias = 0.08 if index in (1, 2) else -0.03
-                    elif agent.archetype == "forensic_analyst":
-                        archetype_bias = 0.06 if index == 0 else 0.0
-                    elif agent.archetype == "suspect_persona":
-                        archetype_bias = 0.05 if index >= 2 else -0.01
-                    elif agent.archetype == "statistical_baseline":
-                        archetype_bias = -0.04 if index == 4 else 0.02
+                affinity_map = _ARCHETYPE_AFFINITY.get(agent.archetype, {})
 
-                    noise = rng.uniform(-0.05, 0.05)
+                for index, candidate in enumerate(candidates):
+                    archetype_bias = affinity_map.get(index, 0.0)
+                    noise = rng.uniform(-0.04, 0.04)
                     score = max(
                         0.001,
                         candidate["base_score"]
                         + archetype_bias
                         + agent.evidence_bias
+                        + evidence_net_scores[index]   # semantic alignment
                         - contradiction_penalty
                         + noise,
                     )
@@ -399,14 +419,21 @@ class CrimeScopeSwarmService:
 
         tail_window = max(3, min(rounds, 6))
         recent = round_probabilities[-tail_window:]
-        averaged = [sum(row[idx] for row in recent) / tail_window for idx in range(len(candidates))]
+        averaged = [
+            sum(row[idx] for row in recent) / tail_window
+            for idx in range(len(candidates))
+        ]
 
         adjusted: List[float] = []
         for idx, score in enumerate(averaged):
             diversity = len({agent.archetype for agent in final_supporters[idx]})
             diversity_bonus = 5.0 if diversity >= 5 else 0.0
             contradiction_hit = 3.0 if idx in (2, 4) and len(disputed_facts) >= 2 else 0.0
-            adjusted.append(max(0.01, score + diversity_bonus - contradiction_hit))
+            # Evidence boost: scale by net evidence alignment
+            evidence_boost = evidence_net_scores[idx] * 10.0
+            adjusted.append(
+                max(0.01, score + diversity_bonus - contradiction_hit + evidence_boost)
+            )
 
         adjusted_total = sum(adjusted) or 1.0
         normalized = [(value / adjusted_total) * 100.0 for value in adjusted]
@@ -415,29 +442,56 @@ class CrimeScopeSwarmService:
             "final_probabilities": normalized,
             "final_supporters": final_supporters,
             "round_probabilities": round_probabilities,
+            "evidence_net_scores": evidence_net_scores,
         }
 
-    def _build_causal_chain(self, case: CrimeScopeCase, candidate: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def _build_causal_chain(
+        self,
+        case: CrimeScopeCase,
+        candidate: Dict[str, Any],
+        evidence_support: float = 0.5,
+    ) -> List[Dict[str, Any]]:
         timeline = case.seed_packet.get("timeline_constraints", {})
         anchors = timeline.get("anchor_events", []) if isinstance(timeline, dict) else []
+        confirmed_facts = case.seed_packet.get("confirmed_facts", [])
 
         if not anchors:
             anchors = [
-                "Pre-incident behavior inferred from known context",
+                "Pre-incident behaviour inferred from known context",
                 "Critical interaction window before observed outcome",
                 "Observed scene state reached",
             ]
 
+        # Certainty is anchored by evidence support score:
+        # low support → 0.40–0.55 range; high support → 0.70–0.90 range.
+        base_certainty = 0.40 + evidence_support * 0.50
+        certainty_values = [
+            max(0.30, min(0.95, base_certainty - 0.12)),
+            max(0.35, min(0.95, base_certainty)),
+            max(0.40, min(0.95, base_certainty + 0.10)),
+        ]
+
         chain: List[Dict[str, Any]] = []
-        certainty_values = [0.58, 0.71, 0.83]
         for idx, event in enumerate(anchors[:3]):
-            chain.append(
-                {
-                    "step": idx + 1,
-                    "event": str(event),
-                    "certainty": certainty_values[idx],
-                }
-            )
+            # Attach corroborating fact if one shares tokens with this anchor.
+            corroborating = None
+            anchor_lower = str(event).lower()
+            for fact in confirmed_facts:
+                if any(
+                    token in anchor_lower
+                    for token in fact.lower().split()
+                    if len(token) > 4
+                ):
+                    corroborating = fact
+                    break
+            step: Dict[str, Any] = {
+                "step": idx + 1,
+                "event": str(event),
+                "certainty": round(certainty_values[idx], 3),
+            }
+            if corroborating:
+                step["corroborating_fact"] = corroborating
+            chain.append(step)
         return chain
 
     def _recommended_actions(self, case: CrimeScopeCase) -> List[str]:
@@ -450,9 +504,12 @@ class CrimeScopeSwarmService:
             actions.append(f"Investigate unresolved question: {question}")
         return actions[:4]
 
-    def _build_probable_cause_report(self, case: CrimeScopeCase, rounds: int, agent_count: int) -> Dict[str, Any]:
+    def _build_probable_cause_report(
+        self, case: CrimeScopeCase, rounds: int, agent_count: int
+    ) -> Dict[str, Any]:
         confirmed_facts = case.seed_packet.get("confirmed_facts", [])
         disputed_facts = case.seed_packet.get("disputed_facts", [])
+        open_questions = case.seed_packet.get("open_questions", [])
 
         agents = self._build_agents(case=case, rounds=rounds, agent_count=agent_count)
         candidates = self._candidate_hypotheses(case)
@@ -460,7 +517,14 @@ class CrimeScopeSwarmService:
 
         probabilities = simulation["final_probabilities"]
         supporters = simulation["final_supporters"]
+        evidence_net_scores = simulation.get("evidence_net_scores", [0.0] * len(candidates))
 
+        # Evidentiary strength profile for the whole case
+        evidentiary_strength = EvidenceEvaluator.compute_evidentiary_strength(
+            confirmed_facts, disputed_facts, open_questions
+        )
+
+        # Rank hypotheses by swarm probability, then annotate with evidence data
         ranked = sorted(
             range(len(candidates)),
             key=lambda idx: probabilities[idx],
@@ -472,10 +536,25 @@ class CrimeScopeSwarmService:
         for idx in top_indexes:
             candidate = candidates[idx]
             support_count = len(supporters[idx])
-            support_facts = confirmed_facts[:2] if confirmed_facts else ["Cross-source corroboration in the seed packet"]
-            against_facts = disputed_facts[:2] if disputed_facts else ["Residual uncertainty remains in unresolved windows"]
 
-            evidence_alignment = max(0.45, min(0.94, (probabilities[idx] / 100.0) + 0.42))
+            # Fetch per-candidate evidence scores
+            hyp_support, hyp_contra = EvidenceEvaluator.score_evidence_set(
+                confirmed_facts, disputed_facts, candidate["title"]
+            )
+
+            support_facts = confirmed_facts[:2] if confirmed_facts else [
+                "Cross-source corroboration in the seed packet"
+            ]
+            against_facts = disputed_facts[:2] if disputed_facts else [
+                "Residual uncertainty remains in unresolved windows"
+            ]
+
+            # Evidence-aware alignment score (blend probability + semantic)
+            prob_component = probabilities[idx] / 100.0
+            evidence_alignment = max(
+                0.30, min(0.97, prob_component * 0.6 + hyp_support * 0.4)
+            )
+
             clusters.append(
                 HypothesisCluster(
                     hypothesis_id=candidate["hypothesis_id"],
@@ -485,13 +564,24 @@ class CrimeScopeSwarmService:
                     evidence_alignment_score=evidence_alignment,
                     key_evidence_supporting=support_facts,
                     key_evidence_against=against_facts,
-                    causal_chain=self._build_causal_chain(case, candidate),
+                    causal_chain=self._build_causal_chain(
+                        case, candidate, evidence_support=hyp_support
+                    ),
                     recommended_investigation_actions=self._recommended_actions(case),
                 )
             )
 
-        hypotheses = [cluster.to_dict(rank=rank + 1) for rank, cluster in enumerate(clusters)]
-        top_probability_total = sum(item["probability_percentage"] for item in hypotheses)
+        hypotheses_raw = [
+            cluster.to_dict(rank=rank + 1) for rank, cluster in enumerate(clusters)
+        ]
+
+        # Annotate each hypothesis dict with evidence net score
+        for i, idx in enumerate(top_indexes[:len(hypotheses_raw)]):
+            hypotheses_raw[i]["evidence_net_score"] = round(
+                evidence_net_scores[idx], 4
+            )
+
+        top_probability_total = sum(item["probability_percentage"] for item in hypotheses_raw)
         swarm_dissent = max(0.0, 100.0 - top_probability_total)
 
         return {
@@ -500,14 +590,20 @@ class CrimeScopeSwarmService:
             "simulation_rounds": rounds,
             "agents_participating": agent_count,
             "archetype_distribution": self.get_archetype_distribution(agent_count),
-            "hypotheses": hypotheses,
+            "hypotheses": hypotheses_raw,
             "consensus_facts": confirmed_facts[:15],
             "irresolvable_ambiguities": disputed_facts[:10],
-            "swarm_dissent_log": f"{swarm_dissent:.1f}% of agents maintained outlier hypotheses",
+            "evidentiary_strength": evidentiary_strength,
+            "swarm_dissent_log": (
+                f"{swarm_dissent:.1f}% of agents maintained outlier hypotheses"
+                f" (evidentiary grade: {evidentiary_strength['grade']})"
+            ),
             "methodology": {
-                "agent_vote_weight": "Each vote is weighted by confidence and archetype-specific vote weight",
+                "agent_vote_weight": "Each vote weighted by archetype confidence and specialisation affinity",
+                "evidence_alignment": "Semantic token-overlap scoring shapes per-candidate base scores",
                 "archetype_diversity_bonus": "+5% score bonus when >=5 archetypes support a hypothesis",
-                "contradiction_penalty": "-3% on hypotheses with strong contradiction pressure",
-                "bayesian_normalisation": "All weighted hypothesis scores are normalized to sum to 100%",
+                "contradiction_penalty": "-3% on hypotheses with high disputed-fact overlap",
+                "evidence_net_bias": "Aligned evidence adds up to +10% per hypothesis; contradictions subtract up to -5%",
+                "bayesian_normalisation": "All weighted hypothesis scores are normalised to sum to 100%",
             },
         }
