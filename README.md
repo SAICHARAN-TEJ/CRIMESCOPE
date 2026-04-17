@@ -1,203 +1,275 @@
-<div align="center">
+# CrimeScope
 
-<img src="./static/image/MiroFish_logo_compressed.jpeg" alt="MiroFish Logo" width="75%"/>
+**AI-powered crime investigation simulation platform with multi-agent systems and graph-based evidence linking.**
 
-<a href="https://trendshift.io/repositories/16144" target="_blank"><img src="https://trendshift.io/api/badge/repositories/16144" alt="666ghj%2FMiroFish | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
+---
 
-A simple and universal swarm intelligence engine, predicting anything
-</br>
-<em>A Simple and Universal Swarm Intelligence Engine, Predicting Anything</em>
+## 🎯 Overview
 
-<a href="https://www.shanda.com/" target="_blank"><img src="./static/image/shanda_logo.png" alt="666ghj%2MiroFish | Shanda" height="40"/></a>
+CrimeScope is a next-generation platform for crime investigation analysis powered by LLM-driven multi-agent systems. It combines graph-based evidence analysis, interactive case simulations, and intelligent report generation to support investigative workflows and scenario analysis.
 
-[![GitHub Stars](https://img.shields.io/github/stars/666ghj/MiroFish?style=flat-square&color=DAA520)](https://github.com/666ghj/MiroFish/stargazers)
-[![GitHub Watchers](https://img.shields.io/github/watchers/666ghj/MiroFish?style=flat-square)](https://github.com/666ghj/MiroFish/watchers)
-[![GitHub Forks](https://img.shields.io/github/forks/666ghj/MiroFish?style=flat-square)](https://github.com/666ghj/MiroFish/network)
-[![Docker](https://img.shields.io/badge/Docker-Build-2496ED?style=flat-square&logo=docker&logoColor=white)](https://hub.docker.com/)
-[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/666ghj/MiroFish)
+### Core Features
 
-[![Discord](https://img.shields.io/badge/Discord-Join-5865F2?style=flat-square&logo=discord&logoColor=white)](http://discord.gg/ePf5aPaHnA)
-[![X](https://img.shields.io/badge/X-Follow-000000?style=flat-square&logo=x&logoColor=white)](https://x.com/mirofish_ai)
-[![Instagram](https://img.shields.io/badge/Instagram-Follow-E4405F?style=flat-square&logo=instagram&logoColor=white)](https://www.instagram.com/mirofish_ai/)
+- **Case Management** — Create, track, and analyze criminal cases with rich metadata
+- **Evidence Linking** — Graph-based relationship mapping between suspects, evidence, and events
+- **Multi-Agent Simulation** — Simulate investigation scenarios with independent agent perspectives
+- **LLM Integration** — Powered by OpenRouter (gpt-4o-mini) for intelligent analysis
+- **Interactive UI** — Vue 3 frontend with real-time graph visualization
+- **REST API** — Production-grade Flask backend with modular architecture
 
-[English](./README.md) | [Chinese Documentation](./README-ZH.md)
+---
 
-</div>
+## 🛠 Tech Stack
 
-## ⚡ Overview
+| Component | Technology | Version |
+|-----------|-----------|---------|
+| **Frontend** | Vue 3 + Vite | 3.x |
+| **Backend** | Flask | 3.x |
+| **Language** | Python | 3.11–3.12 |
+| **Runtime** | Node.js | 18+ |
+| **LLM Provider** | OpenRouter | gpt-4o-mini |
+| **Memory Store** | Zep Cloud | (optional) |
+| **Package Manager** | npm / uv | Latest |
 
-**MiroFish** is a next-generation AI prediction engine powered by multi-agent technology. By extracting seed information from the real world (such as breaking news, policy drafts, or financial signals), it automatically constructs a high-fidelity parallel digital world. Within this space, thousands of intelligent agents with independent personalities, long-term memory, and behavioral logic freely interact and undergo social evolution. You can inject variables dynamically from a "God's-eye view" to precisely deduce future trajectories — **rehearse the future in a digital sandbox, and win decisions after countless simulations**.
-
-> You only need to: Upload seed materials (data analysis reports or interesting novel stories) and describe your prediction requirements in natural language</br>
-> MiroFish will return: A detailed prediction report and a deeply interactive high-fidelity digital world
-
-### Our Vision
-
-MiroFish is dedicated to creating a swarm intelligence mirror that maps reality. By capturing the collective emergence triggered by individual interactions, we break through the limitations of traditional prediction:
-
-- **At the Macro Level**: We are a rehearsal laboratory for decision-makers, allowing policies and public relations to be tested at zero risk
-- **At the Micro Level**: We are a creative sandbox for individual users — whether deducing novel endings or exploring imaginative scenarios, everything can be fun, playful, and accessible
-
-From serious predictions to playful simulations, we let every "what if" see its outcome, making it possible to predict anything.
-
-## 🌐 Live Demo
-
-Welcome to visit our online demo environment and experience a prediction simulation on trending public opinion events we've prepared for you: [mirofish-live-demo](https://666ghj.github.io/mirofish-demo/)
-
-## 📸 Screenshots
-
-<div align="center">
-<table>
-<tr>
-<td><img src="./static/image/Screenshot/run-screenshot-1.png" alt="Screenshot 1" width="100%"/></td>
-<td><img src="./static/image/Screenshot/run-screenshot-2.png" alt="Screenshot 2" width="100%"/></td>
-</tr>
-<tr>
-<td><img src="./static/image/Screenshot/run-screenshot-3.png" alt="Screenshot 3" width="100%"/></td>
-<td><img src="./static/image/Screenshot/run-screenshot-4.png" alt="Screenshot 4" width="100%"/></td>
-</tr>
-<tr>
-<td><img src="./static/image/Screenshot/run-screenshot-5.png" alt="Screenshot 5" width="100%"/></td>
-<td><img src="./static/image/Screenshot/run-screenshot-6.png" alt="Screenshot 6" width="100%"/></td>
-</tr>
-</table>
-</div>
-
-## 🎬 Demo Videos
-
-### 1. Wuhan University Public Opinion Simulation + MiroFish Project Introduction
-
-<div align="center">
-<a href="https://www.bilibili.com/video/BV1VYBsBHEMY/" target="_blank"><img src="./static/image/wuhan-demo-cover.png" alt="MiroFish Demo Video" width="75%"/></a>
-
-Click the image to watch the complete demo video for prediction using BettaFish-generated "Wuhan University Public Opinion Report"
-</div>
-
-### 2. Dream of the Red Chamber Lost Ending Simulation
-
-<div align="center">
-<a href="https://www.bilibili.com/video/BV1cPk3BBExq" target="_blank"><img src="./static/image/dream-red-chamber-cover.jpg" alt="MiroFish Demo Video" width="75%"/></a>
-
-Click the image to watch MiroFish's deep prediction of the lost ending based on hundreds of thousands of words from the first 80 chapters of "Dream of the Red Chamber"
-</div>
-
-> **Financial Prediction**, **Political News Prediction** and more examples coming soon...
-
-## 🔄 Workflow
-
-1. **Graph Building**: Seed extraction & Individual/collective memory injection & GraphRAG construction
-2. **Environment Setup**: Entity relationship extraction & Persona generation & Agent configuration injection
-3. **Simulation**: Dual-platform parallel simulation & Auto-parse prediction requirements & Dynamic temporal memory updates
-4. **Report Generation**: ReportAgent with rich toolset for deep interaction with post-simulation environment
-5. **Deep Interaction**: Chat with any agent in the simulated world & Interact with ReportAgent
+---
 
 ## 🚀 Quick Start
 
-### Option 1: Source Code Deployment (Recommended)
-
-#### Prerequisites
-
-| Tool | Version | Description | Check Installation |
-|------|---------|-------------|-------------------|
-| **Node.js** | 18+ | Frontend runtime, includes npm | `node -v` |
-| **Python** | ≥3.11, ≤3.12 | Backend runtime | `python --version` |
-| **uv** | Latest | Python package manager | `uv --version` |
-
-#### 1. Configure Environment Variables
+### Prerequisites
 
 ```bash
-# Copy the example configuration file
-cp .env.example .env
-
-# Edit the .env file and fill in the required API keys
+node -v        # Node.js 18+
+python --version  # Python 3.11–3.12
+uv --version   # uv package manager
 ```
 
-**Required Environment Variables:**
-
-```env
-# LLM API Configuration (supports any LLM API with OpenAI SDK format)
-# Recommended: Alibaba Qwen-plus model via Bailian Platform: https://bailian.console.aliyun.com/
-# High consumption, try simulations with fewer than 40 rounds first
-LLM_API_KEY=your_api_key
-LLM_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
-LLM_MODEL_NAME=qwen-plus
-
-# Zep Cloud Configuration
-# Free monthly quota is sufficient for simple usage: https://app.getzep.com/
-ZEP_API_KEY=your_zep_api_key
-```
-
-#### 2. Install Dependencies
+### 1. Clone & Install
 
 ```bash
-# One-click installation of all dependencies (root + frontend + backend)
+git clone https://github.com/SAICHARAN-TEJ/CRIMESCOPE.git
+cd CRIMESCOPE
+
+# Install all dependencies
 npm run setup:all
 ```
 
-Or install step by step:
+### 2. Configure Environment
 
 ```bash
-# Install Node dependencies (root + frontend)
-npm run setup
+# Copy example config
+cp .env.example .env
 
-# Install Python dependencies (backend, auto-creates virtual environment)
-npm run setup:backend
+# Edit .env with your credentials
 ```
 
-#### 3. Start Services
+**Required variables:**
+```env
+LLM_API_KEY=your_openrouter_key
+LLM_BASE_URL=https://openrouter.ai/api/v1
+LLM_MODEL_NAME=openai/gpt-4o-mini
+ZEP_API_KEY=your_zep_api_key  # Optional
+```
+
+### 3. Run Services
 
 ```bash
-# Start both frontend and backend (run from project root)
+# Start frontend + backend together
 npm run dev
 ```
 
 **Service URLs:**
 - Frontend: `http://localhost:3000`
 - Backend API: `http://localhost:5001`
+- Health Check: `GET /api/system/health`
 
-**Start Individually:**
-
+**Start individually:**
 ```bash
-npm run backend   # Start backend only
-npm run frontend  # Start frontend only
+npm run frontend   # Vue 3 dev server
+npm run backend    # Flask API server
 ```
 
-### Option 2: Docker Deployment
+### 4. Verify Setup
 
 ```bash
-# 1. Configure environment variables (same as source deployment)
-cp .env.example .env
+# Check backend readiness (all configs loaded)
+curl http://localhost:5001/api/system/readiness
 
-# 2. Pull image and start
+# View service metadata
+curl http://localhost:5001/api/system/info
+```
+
+---
+
+## 📁 Project Structure
+
+```
+CRIMESCOPE/
+├── backend/                  # Flask API server
+│   ├── app/
+│   │   ├── __init__.py      # App factory
+│   │   ├── config.py        # Config management
+│   │   └── api/             # Blueprint routes
+│   │       ├── system.py    # Health/readiness endpoints
+│   │       ├── crimescope.py # Case management
+│   │       ├── graph.py     # Evidence relationships
+│   │       ├── simulation.py # Agent simulations
+│   │       └── report.py    # Report generation
+│   ├── tests/               # Pytest suite
+│   ├── run.py               # Entry point
+│   └── pyproject.toml       # Dependencies
+│
+├── frontend/                # Vue 3 + Vite
+│   ├── src/
+│   │   ├── main.js
+│   │   ├── App.vue
+│   │   └── components/
+│   └── package.json
+│
+├── website/                 # Documentation site (optional)
+├── .env.example            # Config template
+└── package.json            # Root scripts
+```
+
+---
+
+## 📋 API Reference
+
+### System Endpoints
+
+```bash
+# Health check (liveness)
+GET /api/system/health
+
+# Service metadata
+GET /api/system/info
+
+# Environment readiness validation
+GET /api/system/readiness
+```
+
+### Case Management
+
+```bash
+# List all cases
+GET /api/crimescope/cases
+
+# Create new case
+POST /api/crimescope/cases
+
+# Get case details
+GET /api/crimescope/cases/<case_id>
+
+# Update case
+PUT /api/crimescope/cases/<case_id>
+```
+
+### Graph & Evidence
+
+```bash
+# Get case graph
+GET /api/graph/cases/<case_id>
+
+# Add evidence node
+POST /api/graph/evidence
+
+# Link evidence
+POST /api/graph/link
+```
+
+---
+
+## 🧪 Testing
+
+```bash
+# Run all tests
+npm run test
+
+# Run backend tests only
+npm run test:backend
+
+# Run with coverage
+npm run test:coverage
+```
+
+---
+
+## 🐳 Docker Deployment
+
+```bash
+# Build and start containers
 docker compose up -d
+
+# Check logs
+docker compose logs -f
 ```
 
-Reads `.env` from root directory by default, maps ports `3000 (frontend) / 5001 (backend)`
+Services run at:
+- Frontend: `http://localhost:3000`
+- Backend: `http://localhost:5001`
 
-> Mirror address for faster pulling is provided as comments in `docker-compose.yml`, replace if needed.
+---
 
-## 📬 Join the Conversation
+## 📚 Development
 
-<div align="center">
-<img src="./static/image/community-group.png" alt="Community Group" width="60%"/>
-</div>
+### Scripts (from root)
 
-&nbsp;
+```bash
+npm run dev              # Start frontend + backend
+npm run frontend         # Frontend dev server only
+npm run backend          # Backend dev server only
+npm run setup:all        # Install all dependencies
+npm run test             # Run all tests
+npm run lint             # Lint JavaScript
+npm run build            # Build frontend for production
+```
 
-The MiroFish team is recruiting full-time/internship positions. If you're interested in multi-agent simulation and LLM applications, feel free to send your resume to: **mirofish@shanda.com**
+### Backend Development
 
-## 📄 Acknowledgments
+```bash
+cd backend
+uv venv
+source .venv/bin/activate  # or .venv\Scripts\activate on Windows
+uv sync
+python run.py
+```
 
-**MiroFish has received strategic support and incubation from Shanda Group!**
+---
 
-MiroFish's simulation engine is powered by **[OASIS (Open Agent Social Interaction Simulations)](https://github.com/camel-ai/oasis)**, We sincerely thank the CAMEL-AI team for their open-source contributions!
+## 🔐 Environment Configuration
 
-## 📈 Project Statistics
+See `.env.example` for all available options. Key variables:
 
-<a href="https://www.star-history.com/#666ghj/MiroFish&type=date&legend=top-left">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=666ghj/MiroFish&type=date&theme=dark&legend=top-left" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=666ghj/MiroFish&type=date&legend=top-left" />
-   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=666ghj/MiroFish&type=date&legend=top-left" />
- </picture>
-</a>
+| Variable | Purpose | Example |
+|----------|---------|---------|
+| `LLM_API_KEY` | OpenRouter API key | `sk-or-v1-...` |
+| `LLM_BASE_URL` | LLM endpoint | `https://openrouter.ai/api/v1` |
+| `LLM_MODEL_NAME` | Model identifier | `openai/gpt-4o-mini` |
+| `ZEP_API_KEY` | Memory store token | (optional) |
+| `FLASK_DEBUG` | Debug mode | `true` / `false` |
+
+---
+
+## 📝 Contributing
+
+1. Create a feature branch: `git checkout -b feature/your-feature`
+2. Commit changes: `git commit -am 'Add feature'`
+3. Push to branch: `git push origin feature/your-feature`
+4. Open a Pull Request
+
+---
+
+## 📄 License
+
+See LICENSE file for details.
+
+---
+
+## 🤝 Support
+
+For issues, questions, or contributions:
+- Open an issue on [GitHub](https://github.com/SAICHARAN-TEJ/CRIMESCOPE/issues)
+- Check existing documentation in this README
+
+---
+
+**Last updated:** April 17, 2026
