@@ -410,7 +410,7 @@ class OntologyGenerator:
         code_lines = [
             '"""',
             ' ',
-            ' MiroFish ， ',
+            ' CrimeScope core logic, ',
             '"""',
             '',
             'from pydantic import Field',

@@ -8,14 +8,14 @@
         <router-link to="/crimescope" class="launch-link">
           Reconstruct Case <span class="arrow">→</span>
         </router-link>
-        <a href="https://github.com/666ghj/CrimeScope" target="_blank" class="github-link">
+        <a href="https://github.com/SAICHARAN-TEJ/CrimeScope" target="_blank" class="github-link">
           {{ $t('nav.visitGithub') }} <span class="arrow">↗</span>
         </a>
       </div>
     </nav>
 
     <div class="main-content">
-      <!-- translated text：Hero area -->
+      <!-- Section：Hero area -->
       <section class="hero-section">
         <div class="hero-left">
           <div class="tag-row">
@@ -31,7 +31,7 @@
           <div class="hero-desc">
             <p>
               <i18n-t keypath="home.heroDesc" tag="span">
-                <template #brand><span class="highlight-bold">{{ $t('home.heroDescBrand') }}</span></template>
+                <template #brand><span class="highlight-bold">CRIMESCOPE</span></template>
                 <template #agentScale><span class="highlight-orange">{{ $t('home.heroDescAgentScale') }}</span></template>
                 <template #optimalSolution><span class="highlight-code">{{ $t('home.heroDescOptimalSolution') }}</span></template>
               </i18n-t>
@@ -47,7 +47,7 @@
         <div class="hero-right">
           <!-- Logo area -->
           <div class="logo-container">
-            <img src="../assets/logo/MiroFish_logo_left.jpeg" alt="CrimeScope Logo" class="hero-logo" />
+            <img src="../assets/logo/CrimeScope_logo.png" alt="CrimeScope Logo" class="hero-logo" />
           </div>
           
           <button class="scroll-down-btn" @click="scrollToBottom">

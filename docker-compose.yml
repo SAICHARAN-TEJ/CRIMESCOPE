@@ -1,7 +1,10 @@
 services:
   # ── Main App (Flask backend + Vue frontend) ──────────────────
   crimescope-app:
-    image: ghcr.io/666ghj/mirofish:latest
+    image: crimescope-app:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: crimescope-app
     env_file:
       - .env
