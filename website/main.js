@@ -34,43 +34,34 @@ heroTL
   })
 })()
 
-// ── Section reveal ──────────────────────────────────────────────────
-gsap.utils.toArray('.section').forEach(sec => {
-  const heading = sec.querySelector('h2')
-  const overline = sec.querySelector('.overline')
-  const cards = sec.querySelectorAll('.glass, .step, .rp-finding, .arch-card')
-  const desc = sec.querySelector('.section-desc')
+// ── Section reveal — IntersectionObserver (no GSAP timing bugs) ────────
+// Using native IO instead of GSAP ScrollTrigger for card reveals.
+// This is immune to layout-timing races that caused cards to stay hidden.
+;(function setupReveal() {
+  const items = document.querySelectorAll('.glass, .step, .rp-finding, .arch-card')
+  const headings = document.querySelectorAll('.section h2, .section .overline:not(#hero-overline), .section .section-desc')
 
-  if (overline) {
-    gsap.from(overline, {
-      x: -30, opacity: 0, duration: 0.5,
-      scrollTrigger: { trigger: overline, start: 'top 85%', toggleActions: 'play none none reverse' },
+  const io = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        entry.target.classList.add('is-visible')
+        io.unobserve(entry.target) // once visible, never hide again
+      }
     })
-  }
+  }, { threshold: 0.1, rootMargin: '0px 0px -60px 0px' })
 
-  if (heading) {
-    gsap.from(heading, {
-      y: 60, opacity: 0, duration: 0.8,
-      scrollTrigger: { trigger: heading, start: 'top 80%', toggleActions: 'play none none reverse' },
-    })
-  }
+  items.forEach((el, i) => {
+    el.style.transitionDelay = `${(i % 8) * 70}ms`
+    io.observe(el)
+  })
 
-  if (desc) {
-    gsap.from(desc, {
-      y: 30, opacity: 0, duration: 0.6,
-      scrollTrigger: { trigger: desc, start: 'top 85%', toggleActions: 'play none none reverse' },
-    })
-  }
-
-  if (cards.length) {
-    gsap.from(cards, {
-      y: 40, opacity: 0, stagger: 0.06, duration: 0.6,
-      scrollTrigger: { trigger: cards[0], start: 'top 85%', toggleActions: 'play none none reverse' },
-    })
-  }
-})
+  headings.forEach(el => {
+    io.observe(el)
+  })
+})()
 
 // ── Architecture diagram cascade ────────────────────────────────────
+
 gsap.utils.toArray('.arch-layer').forEach((layer, i) => {
   gsap.from(layer, {
     y: 30, opacity: 0, duration: 0.5,
