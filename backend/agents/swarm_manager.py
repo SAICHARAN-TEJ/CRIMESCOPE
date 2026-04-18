@@ -52,14 +52,23 @@ class SwarmManager:
         hypotheses: List[Dict[str, Any]],
         evidence: List[Dict[str, Any]],
         sample_size: int = 15,
+        demo_mode: bool = False,
     ) -> List[Dict[str, Any]]:
         """Execute one round.
 
-        LLM calls are made only for a sampled subset of agents
+        If demo_mode=True, all agents run deterministically (no LLM calls).
+        Otherwise LLM calls are made for a sampled subset of agents
         (default 15 per round — fits comfortably under 20 RPM).
         The remaining agents copy-and-influence from the sample results
         so the full 1,000-agent vote distribution is still generated.
         """
+        if demo_mode:
+            # Fast path: all 1000 agents update deterministically in parallel
+            results = list(await asyncio.gather(
+                *(a.run_round(round_num, hypotheses, evidence, demo_mode=True) for a in self.agents)
+            ))
+            return results
+
         # Sample representative agents (at least 1 per archetype in sample)
         sampled = random.sample(self.agents, min(sample_size, len(self.agents)))
         llm_results = list(await asyncio.gather(

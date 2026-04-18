@@ -112,6 +112,56 @@ All calls route through an OpenRouter integration, maximizing reasoning without 
 
 ---
 
+## 🛠 Tech Stack
+
+### Backend
+| Layer | Technology | Purpose |
+|-------|-----------|---------|
+| **Runtime** | Python 3.11+ | Async-first investigation engine |
+| **API Framework** | FastAPI + Uvicorn | SSE simulation streaming, REST endpoints |
+| **Agent Concurrency** | `asyncio.gather` | Parallel agent execution within rate limits |
+| **Data Validation** | Pydantic v2 | Typed models for agents, votes, reports |
+| **Vector Memory** | ChromaDB | Per-case semantic memory with namespace isolation |
+| **Agent Memory** | mem0 | Episodic + semantic dual-layer memory per agent |
+| **Knowledge Graph** | Neo4j Community | MERGE-based entity graph with certainty-weighted edges |
+| **DB Persistence** | Supabase (optional) | Graph snapshots + report storage per case |
+
+### Frontend
+| Layer | Technology | Purpose |
+|-------|-----------|---------|
+| **Framework** | Vue 3 (Composition API) | Reactive investigation dashboard |
+| **Build Tool** | Vite | HMR dev server, optimized production build |
+| **State Management** | Pinia | Typed stores for case, graph, simulation, theme |
+| **Graph Renderer** | D3.js v7 | Force-directed knowledge graph with zoom/pan |
+| **Routing** | Vue Router 4 | Hash-based SPA routing |
+| **Styling** | Vanilla CSS (custom tokens) | Dark/light cinematic theme system |
+
+### AI & LLM
+| Model | Provider | Role |
+|-------|----------|------|
+| `google/gemma-3-27b-it:free` | OpenRouter (free) | Primary agent voting & chain-of-thought |
+| `nousresearch/hermes-3-llama-3.1-405b:free` | OpenRouter (free) | Deep behavioral profiling |
+| `meta-llama/llama-3.3-70b-instruct:free` | OpenRouter (free) | Contradiction detection & fact-checking |
+| `nvidia/nemotron-nano-12b-v2-vl:free` | OpenRouter (free) | Vision/image forensic analysis |
+| `google/gemini-2.5-pro` | OpenRouter | Premium multi-pass photo analysis |
+
+### Infrastructure & DevOps
+| Tool | Purpose |
+|------|---------|
+| **Docker Compose** | Full-stack orchestration (5 services: backend · frontend · neo4j · chroma · website) |
+| **nginx** | Static serving for the marketing website (`:80`) |
+| **GitHub Actions** | CI/CD pipeline |
+| **AGPL-3.0** | Open-source license ensuring all forks remain open |
+
+### Marketing Site
+| Tool | Purpose |
+|------|---------|
+| **GSAP 3** | ScrollTrigger animations, canvas particle effects |
+| **IntersectionObserver API** | Progressive reveal system (CSS-native fallback) |
+| **nginx (Docker)** | Zero-dependency static deployment |
+
+---
+
 ## 📁 Project Structure
 
 ```text

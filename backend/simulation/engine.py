@@ -61,9 +61,13 @@ class SimulationState:
 
 
 class SimulationEngine:
+    # Case IDs that use the deterministic demo path (no LLM calls)
+    DEMO_CASE_IDS = {"harlow-001"}
+
     def __init__(self, case_id: str, seed_packet: Dict[str, Any]) -> None:
         self.case_id = case_id
         self.seed = seed_packet
+        self.demo_mode = case_id in self.DEMO_CASE_IDS
         self.swarm = SwarmManager(case_id, seed_packet)
         self.rounds = settings.simulation_rounds
         self.hypotheses: List[Dict[str, Any]] = []
@@ -89,7 +93,9 @@ class SimulationEngine:
                 logger.info(f"[{self.case_id}] Round {r}/{self.rounds}")
                 yield self._sse("status", self.state.to_dict())
 
-                outputs = await self.swarm.run_round(r, self.hypotheses, [])
+                outputs = await self.swarm.run_round(
+                    r, self.hypotheses, [], demo_mode=self.demo_mode
+                )
                 self.hypotheses = cluster_hypotheses(outputs)
 
                 # Persist snapshot to Supabase (optional)
@@ -106,7 +112,8 @@ class SimulationEngine:
                         "graph": graph,
                     },
                 )
-                await asyncio.sleep(0.5)
+                # Demo mode: fast ticks; live mode: small back-pressure
+                await asyncio.sleep(0.1 if self.demo_mode else 0.5)
 
             # Phase 3 — report via Probable Cause Engine
             self.state.status = SimulationStatus.COMPLETE

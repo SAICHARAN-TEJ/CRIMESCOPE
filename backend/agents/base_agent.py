@@ -142,8 +142,17 @@ class BaseAgent:
         round_num: int,
         hypotheses: List[Dict[str, Any]],
         evidence: List[Dict[str, Any]],
+        demo_mode: bool = False,
     ) -> Dict[str, Any]:
-        """Execute one simulation round — assess peers, update chain, vote."""
+        """Execute one simulation round — assess peers, update chain, vote.
+
+        If demo_mode is True (e.g. harlow-001 demo case), all LLM calls are
+        skipped and deterministic evolution is applied instead.  This keeps the
+        demo interactive (<3 s per round) without burning any API quota.
+        """
+        if demo_mode:
+            return self._run_round_demo(round_num)
+
         import json
 
         prev_chain = [s.model_dump() for s in self.model.current_causal_chain]
@@ -168,6 +177,77 @@ class BaseAgent:
                 self.model.episodic_memory_ns,
                 f"Round {round_num}: {raw[:1500]}",
                 {"round": round_num},
+            )
+
+        return {
+            "agent_id": self.model.agent_id,
+            "archetype": self.model.archetype,
+            "round": round_num,
+            "vote": self.model.current_vote.model_dump(),
+            "chain_length": len(self.model.current_causal_chain),
+            "alignment_score": self.model.evidence_alignment_score,
+        }
+
+    def _run_round_demo(self, round_num: int) -> Dict[str, Any]:
+        """Deterministic demo-mode round update — no LLM calls.
+
+        Over 30 rounds the swarm converges toward H-002 (Planned Ambush) by
+        drifting each agent's confidence toward a seeded archetype target.
+        """
+        import hashlib
+
+        # Hypothesis convergence map: which hypothesis each archetype gravitates to
+        archetype_target = {
+            "Forensic Analyst":          ("H-002", 0.92),
+            "Behavioral Profiler":       ("H-002", 0.85),
+            "Scene Reconstructor":       ("H-002", 0.88),
+            "Contradiction Detector":    ("H-003", 0.72),
+            "Eyewitness Simulator":      ("H-001", 0.68),
+            "Statistical Baseline Agent":("H-002", 0.78),
+            "Suspect Persona":           ("H-004", 0.61),
+            "Alibi Verifier":            ("H-002", 0.81),
+        }
+        target_hyp, target_conf = archetype_target.get(
+            self.model.archetype, ("H-002", 0.75)
+        )
+
+        # Digest-based per-agent jitter so agents don't move in lock-step
+        digest = int(hashlib.md5(self.model.agent_id.encode()).hexdigest(), 16)
+        jitter = (digest % 11 - 5) / 200          # ±0.025
+        progress = round_num / 30                  # 0 → 1 over 30 rounds
+
+        # Interpolate current confidence toward target
+        cur_conf = self.model.current_vote.confidence
+        new_conf = cur_conf + (target_conf - cur_conf) * progress * 0.35 + jitter
+        new_conf = min(0.99, max(0.10, new_conf))
+
+        # Agents switch hypothesis mid-simulation to simulate real divergence
+        cur_hyp = self.model.current_vote.hypothesis_id
+        if progress > 0.4 and cur_hyp not in (target_hyp, "H-002"):
+            cur_hyp = target_hyp
+
+        self.model.current_vote = AgentVote(hypothesis_id=cur_hyp, confidence=new_conf)
+        self.model.evidence_alignment_score = min(
+            1.0, self.model.evidence_alignment_score + new_conf * 0.08
+        )
+
+        # Grow causal chain one step per 5 rounds
+        demo_events = [
+            "Victim arrived at premises — normal routing confirmed.",
+            "Perpetrator accessed Level 1 via staff stairwell (unlogged).",
+            "Handbag relocated during CCTV blind spot 06:58–07:20.",
+            "Vehicle observed idling — inconsistent with registered plates.",
+            "No struggle detected — suggests coercive prior relationship.",
+            "Exit route pre-planned: garage → Side Street B (NW exit).",
+        ]
+        step_idx = (round_num - 1) // 5
+        if step_idx < len(demo_events) and len(self.model.current_causal_chain) <= step_idx:
+            self.model.current_causal_chain.append(
+                CausalStep(
+                    step=len(self.model.current_causal_chain) + 1,
+                    event=demo_events[step_idx],
+                    certainty=min(0.99, 0.5 + progress * 0.4),
+                )
             )
 
         return {
