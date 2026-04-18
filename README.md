@@ -49,7 +49,7 @@ A single "Agent" is rarely unbiased. CrimeScope deploys an entire precinct:
 | **Behavioral Profiler** | 100 | Maps psychological intent, victimology, and motive. |
 | **Alibi Verifier** | 80 | Cross-checks claimed timelines against physical constraints. |
 
-Over 30 simulation rounds, the agents test hypotheses, logging contradictions and updating their beliefs.
+Over 30 simulation rounds, the agents test hypotheses, logging contradictions and updating their beliefs. To maintain high performance on free-tier rate limits, CrimeScope utilizes a **Representative Swarm Sampling** model: 15 agents are selected per round for deep reasoning, with their influence propagated to the remaining 985 agents via archetype-weighted deterministic influence.
 
 <div align="center">
   <img src="docs/assets/graph_interaction.webp" alt="Dynamic Knowledge Graph" width="80%"/>
@@ -100,10 +100,10 @@ The final report provides:
 
 ### Free-Tier LLM Routing Strategy
 All calls route through an OpenRouter integration, maximizing reasoning without requiring enterprise credits:
-- **`deepseek/deepseek-v3:free`** — Primary volume logic and agent voting.
-- **`deepseek/deepseek-r1:free`** — Deep chain-of-thought analysis for Behavioral Profilers.
-- **`meta-llama/llama-3.3-70b:free`** — Ultra-fast fact-checking and contradiction detection.
-- **`google/gemini-2.5-pro:free`** — Top tier multi-modal vision extraction.
+- **`google/gemma-3-27b-it:free`** — Primary volume logic and agent voting.
+- **`nousresearch/hermes-3-llama-3.1-405b:free`** — Deep chain-of-thought analysis for Behavioral Profilers.
+- **`meta-llama/llama-3.3-70b-instruct:free`** — Ultra-fast fact-checking and contradiction detection.
+- **`nvidia/nemotron-nano-12b-v2-vl:free`** — Top tier multi-modal vision extraction.
 
 ---
 
