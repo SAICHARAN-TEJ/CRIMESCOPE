@@ -205,7 +205,7 @@ function render() {
     .attr('stroke', nodeStroke)
     .attr('stroke-width', d => d.type === 'agent' ? 1 : 2.5)
     .style('cursor', 'pointer')
-    .on('click', (e, d) => { e.stopPropagation(); graph.selectNode(d) })
+    .on('click', (e, d) => { e.stopPropagation(); if (!d._isDragging) graph.selectNode(d) })
     .on('mouseenter', (e, d) => {
       if (!graph.selectedNode || graph.selectedNode.id !== d.id) {
         d3.select(e.target).attr('stroke', nodeStrokeHover()).attr('stroke-width', 3)
@@ -223,7 +223,7 @@ function render() {
       })
       .on('drag', (e, d) => {
         const dx = e.x - d._dragStartX, dy = e.y - d._dragStartY
-        if (!d._isDragging && Math.sqrt(dx * dx + dy * dy) > 3) {
+        if (!d._isDragging && Math.sqrt(dx * dx + dy * dy) > 4) {
           d._isDragging = true
           sim.alphaTarget(0.3).restart()
         }
@@ -231,7 +231,9 @@ function render() {
       })
       .on('end', (e, d) => {
         if (d._isDragging) sim.alphaTarget(0)
-        d.fx = null; d.fy = null; d._isDragging = false
+        d.fx = null; d.fy = null
+        // Reset drag flag after a brief delay so click handler can check it
+        setTimeout(() => { d._isDragging = false }, 50)
       })
     )
     .transition().delay((_, i) => Math.min(i * 2, 400)).duration(300)

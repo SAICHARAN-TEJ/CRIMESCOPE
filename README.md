@@ -11,12 +11,11 @@
 
 <br />
 
-
 ---
 
 ## 👁‍🗨 The Platform
 
-**CrimeScope** is an advanced swarm intelligence platform designed to reconstruct complex timelines and detect contradictions in criminal investigations. Rather than relying on a single LLM call, CrimeScope spins up an adversarial, 1,000-agent swarm divided into 8 distinct cognitive archetypes. 
+**CrimeScope** is an advanced swarm intelligence platform designed to reconstruct complex timelines and detect contradictions in criminal investigations. Rather than relying on a single LLM call, CrimeScope spins up an adversarial, 1,000-agent swarm divided into 8 distinct cognitive archetypes.
 
 Agents analyze parsed evidence, develop independent causal chains, cross-examine each other for contradictions, and ultimately converge on the statistical truth using a Bayesian Probable Cause Engine.
 
@@ -32,7 +31,7 @@ CrimeScope operates across 3 main ingestion modes:
 
 1. **Photo Evidence**: Gemini 2.5 Pro conducts multi-pass forensic analysis of crime scene imagery, extracting blood spatter patterns, anomalies, and spatial relationships.
 2. **Document & Video**: A 3-pass extraction pipeline processes transcripts and police reports to build a highly structured semantic timeline.
-3. **Demo Case**: One-click launch simulating investigating the "Harlow Manor" locked-room mystery.
+3. **Demo Case**: One-click launch investigating the "Harlow Street Incident" locked-room mystery.
 
 ### The 1,000-Agent Swarm
 
@@ -52,25 +51,31 @@ A single "Agent" is rarely unbiased. CrimeScope deploys an entire precinct:
 Over 30 simulation rounds, the agents test hypotheses, logging contradictions and updating their beliefs. To maintain high performance on free-tier rate limits, CrimeScope utilizes a **Representative Swarm Sampling** model: 15 agents are selected per round for deep reasoning, with their influence propagated to the remaining 985 agents via archetype-weighted deterministic influence.
 
 <div align="center">
-  <img src="docs/assets/graph_interaction.webp" alt="Dynamic Knowledge Graph" width="80%"/>
+  <img src="docs/assets/graph_node_detail.png" alt="Node Details — Margaret Voss" width="100%"/>
   <br/>
-  <em>Every semantic entity and contradiction is mapped into a Neo4j Knowledge Graph in real-time.</em>
+  <em>Interactive Knowledge Graph — click any entity to explore its connections and confirmed facts.</em>
+</div>
+
+<div align="center">
+  <img src="docs/assets/graph_agent_detail.png" alt="Agent Details — SP-007 Suspect Persona" width="100%"/>
+  <br/>
+  <em>Inspect any swarm agent — view its archetype, active connections, and the evidence it has evaluated.</em>
 </div>
 
 ---
 
 ## 📊 Probable Cause Engine
 
-Once the simulation rounds complete, the Bayesian **Probable Cause Engine** filters 1,000 localized causal chains down into a deterministic final report. 
+Once the simulation rounds complete, the Bayesian **Probable Cause Engine** filters 1,000 localized causal chains down into a deterministic final report.
 
 <div align="center">
-  <img src="docs/assets/report_demo.webp" alt="Probable Cause Report" width="100%"/>
+  <img src="docs/assets/report.png" alt="Probable Cause Report" width="100%"/>
 </div>
 
 The final report provides:
 - **Consensus Score:** The swarm's overall certainty.
 - **Top Hypotheses:** Weighted by supporting physical evidence and minimal contradictions.
-- **Dissent Log:** Hard-coded minority opinions. Users can directly interrogate dissent streams via an integrated Chat interface to ask *why* 5% of agents believed a different timeline.
+- **Dissent Log:** Minority opinions surfaced for interrogation. Users can ask *why* 5% of agents believed a different timeline via an integrated Chat interface.
 
 ---
 
@@ -107,14 +112,78 @@ All calls route through an OpenRouter integration, maximizing reasoning without 
 
 ---
 
+## 📁 Project Structure
+
+```text
+CRIMESCOPE/
+├── backend/                    # FastAPI Swarm Engine (Python 3.11+)
+│   ├── agents/
+│   │   ├── base_agent.py       # Shared agent class with LLM reasoning
+│   │   └── swarm_manager.py    # Sampling + influence propagation logic
+│   ├── demo/
+│   │   └── harlow_case.py      # Pre-loaded Harlow Street demo case
+│   ├── engine/
+│   │   └── probable_cause.py   # Bayesian voting & report generation
+│   ├── pipeline/               # Vision & document 3-pass extraction
+│   ├── simulation/
+│   │   └── voting.py           # Round-by-round hypothesis scoring
+│   ├── db/
+│   │   ├── neo4j_client.py     # Knowledge graph CRUD (MERGE-based)
+│   │   └── models.py           # Pydantic data models
+│   ├── memory/
+│   │   └── chroma_client.py    # ChromaDB vector store
+│   ├── utils/
+│   │   ├── openrouter.py       # Rate-limited LLM client
+│   │   └── logger.py           # Structured logging
+│   └── main.py                 # FastAPI app + SSE simulation endpoints
+│
+├── frontend/                   # Vue 3 + Vite Investigator Dashboard
+│   └── src/
+│       ├── assets/style.css    # Global CSS variable design system
+│       ├── components/
+│       │   ├── graph/
+│       │   │   ├── GraphCanvas.vue   # D3.js force-directed graph
+│       │   │   ├── DetailPanel.vue   # Node / Agent detail overlay
+│       │   │   └── Legend.vue        # Entity type legend
+│       │   ├── layout/
+│       │   │   └── TopBar.vue        # Navigation with theme toggle
+│       │   └── ui/
+│       │       └── ThemeToggle.vue   # Cinematic dark/light mode toggle
+│       ├── stores/
+│       │   ├── themeStore.js         # Pinia: persisted dark mode state
+│       │   └── caseStore.js          # Pinia: active case & graph data
+│       └── views/
+│           ├── HomeView.vue          # Mode selection & case launch
+│           ├── SimulateView.vue      # Live simulation + knowledge graph
+│           └── ReportView.vue        # Probable cause report + chat
+│
+├── website/                    # GSAP 3 Marketing Landing Page
+│   ├── index.html              # 10-section static site
+│   ├── main.js                 # GSAP ScrollTrigger + canvas animations
+│   └── style.css               # Typography & layout tokens
+│
+├── docs/
+│   └── assets/                 # README visual assets
+│
+├── data/                       # Persisted Docker volumes (git-ignored)
+│   ├── neo4j/                  # Knowledge graph database files
+│   └── chroma/                 # Vector embeddings store
+│
+├── docker-compose.yml          # Full-stack orchestration (5 services)
+├── .env.example                # Environment variable template
+└── README.md                   # This file
+```
+
+---
+
 ## ⚙️ Quick Start Installation
 
-CrimeScope utilizes a highly customized Docker-compose orchestration for its multi-service backend. 
+CrimeScope uses Docker Compose to orchestrate its multi-service backend in a single command.
 
 ### 1. Requirements
 * Docker & Docker Compose
-* An OpenRouter API Key (Free tier works perfectly)
-* Node.js 18+ (for local frontend dev)
+* An OpenRouter API Key *(Free tier works perfectly)*
+* Node.js 18+ *(for local frontend dev only)*
 
 ### 2. Setup
 
@@ -123,11 +192,11 @@ CrimeScope utilizes a highly customized Docker-compose orchestration for its mul
 git clone https://github.com/SAICHARAN-TEJ/CRIMESCOPE.git
 cd CRIMESCOPE
 
-# Copy the environment file
+# Copy the environment template
 cp .env.example .env
 ```
 
-**Open your `.env` file** and add your OpenRouter Key:
+**Open `.env`** and set your OpenRouter key:
 ```env
 LLM_API_KEY=your_openrouter_api_key_here
 ```
@@ -135,16 +204,18 @@ LLM_API_KEY=your_openrouter_api_key_here
 ### 3. Launch
 
 ```bash
-# Boot the entire infrastructure
+# Boot the full investigation stack
 docker compose up -d
 ```
 
 ### 4. Access Services
 
-* **CrimeScope Investigators Dashboard**: `http://localhost:3000`
-* **Marketing & Landing Page**: `http://localhost:80`
-* **FastAPI Backend Swagger**: `http://localhost:5001/docs`
-* **Neo4j Browser**: `http://localhost:7474` *(Auth defined in .env)*
+| Service | URL | Description |
+|---------|-----|-------------|
+| **Investigator Dashboard** | `http://localhost:3000` | Vue 3 simulation & graph UI |
+| **Marketing Landing Page** | `http://localhost:80` | GSAP 3 public-facing site |
+| **FastAPI Swagger** | `http://localhost:5001/docs` | Backend API documentation |
+| **Neo4j Browser** | `http://localhost:7474` | Knowledge graph explorer |
 
 ---
 

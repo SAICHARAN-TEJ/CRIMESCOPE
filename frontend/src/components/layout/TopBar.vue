@@ -8,10 +8,13 @@
     <div class="header-right">
       <ThemeToggle />
       <div class="step-divider"></div>
+      <a href="http://localhost:80" class="nav-link nav-link-external" target="_blank">↗ Landing</a>
+      <div class="step-divider"></div>
       <router-link to="/" class="nav-link">← Cases</router-link>
     </div>
   </header>
 </template>
+
 
 <script setup>
 import ThemeToggle from '@/components/ui/ThemeToggle.vue'
@@ -52,4 +55,6 @@ import ThemeToggle from '@/components/ui/ThemeToggle.vue'
   border-radius: 6px; transition: all 0.2s;
 }
 .nav-link:hover { background: var(--c-canvas); color: var(--c-text); border-color: var(--c-border-hi); }
+.nav-link-external { text-decoration: none; }
+.nav-link-external:hover { color: var(--c-red); border-color: var(--c-red); }
 </style>
