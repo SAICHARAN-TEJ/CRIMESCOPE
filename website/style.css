@@ -254,29 +254,29 @@ footer {
 .footer-copy { font-size: 12px; color: var(--text-muted); }
 
 /* ── IntersectionObserver reveal system ──────────────────────────────── */
-/* Cards and headings start invisible and animate in when IO adds .is-visible */
-.glass, .step, .rp-finding, .arch-card,
-.section h2, .section .overline:not(#hero-overline), .section .section-desc {
-  opacity: 0;
-  transform: translateY(24px);
-  transition: opacity 0.55s ease, transform 0.55s ease;
+/* NUCLEAR FIX: Cards are ALWAYS visible by default.                      */
+/* Animation plays as an enhancement when IO fires — never gates content. */
+
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
-/* Once IntersectionObserver fires, reveal the element */
+
+/* Before IO fires: cards are fully visible — no hidden state */
+.glass, .step, .rp-finding, .arch-card,
+.section h2, .section .overline:not(#hero-overline),
+.section .section-desc {
+  opacity: 1;
+  transform: none;
+}
+
+/* When IO fires .is-visible, play the nice fade-in animation */
 .glass.is-visible, .step.is-visible, .rp-finding.is-visible,
 .arch-card.is-visible, .section h2.is-visible,
 .section .overline.is-visible, .section .section-desc.is-visible {
-  opacity: 1;
-  transform: translateY(0);
+  animation: fadeInUp 0.5s ease both;
 }
-/* Fallback: if JS is disabled/blocked, always show everything */
-.no-js .glass, .no-js .step, .no-js .rp-finding, .no-js .arch-card,
-.no-js .section h2, .no-js .section .overline, .no-js .section .section-desc {
-  opacity: 1; transform: none;
-}
-/* Hero elements are never hidden by this system */
-#hero-overline, #hero-h1, #hero-p, #hero-btns, #hero-stats .stat {
-  opacity: 1; transform: none;
-}
+
 
 /* ── RESPONSIVE ══════════════════════════════════════════════════════ */
 @media (max-width: 860px) {
