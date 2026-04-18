@@ -11,9 +11,6 @@
 
 <br />
 
-<div align="center">
-  <img src="docs/assets/landing.webp" alt="CrimeScope Landing Page Preview" width="100%"/>
-</div>
 
 ---
 
