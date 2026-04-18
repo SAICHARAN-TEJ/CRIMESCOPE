@@ -181,10 +181,11 @@ function render() {
   })
 
   // ── edges (path, not line — supports curves) ──
+  const edgeColor = () => getComputedStyle(document.documentElement).getPropertyValue('--c-edge').trim() || '#C0C0C0'
   const edgeSel = root.select('.layer-edges').selectAll('path').data(edges, d => d.id)
   edgeSel.exit().transition().duration(300).style('opacity', 0).remove()
   edgeSel.enter().append('path')
-    .attr('stroke', '#C0C0C0')
+    .attr('stroke', edgeColor)
     .attr('stroke-width', d => (d.type === 'INVESTIGATES' || d.type === 'DEBATES') ? 0.5 : 1.5)
     .attr('fill', 'none')
     .style('cursor', 'pointer')
@@ -193,24 +194,26 @@ function render() {
     .transition().duration(500)
     .style('opacity', d => (d.type === 'INVESTIGATES' || d.type === 'DEBATES') ? 0.15 : 0.6)
 
-  // ── nodes (colored fill + white stroke) ──
+  // ── nodes (colored fill + theme-aware stroke) ──
+  const nodeStroke = () => getComputedStyle(document.documentElement).getPropertyValue('--c-node-stroke').trim() || '#fff'
+  const nodeStrokeHover = () => getComputedStyle(document.documentElement).getPropertyValue('--c-node-stroke-hover').trim() || '#333'
   const nodeSel = root.select('.layer-nodes').selectAll('circle').data(nodes, d => d.id)
   nodeSel.exit().transition().duration(300).attr('r', 0).remove()
   nodeSel.enter().append('circle')
     .attr('r', 0)
     .attr('fill', d => getColor(d.type))
-    .attr('stroke', '#fff')
+    .attr('stroke', nodeStroke)
     .attr('stroke-width', d => d.type === 'agent' ? 1 : 2.5)
     .style('cursor', 'pointer')
     .on('click', (e, d) => { e.stopPropagation(); graph.selectNode(d) })
     .on('mouseenter', (e, d) => {
       if (!graph.selectedNode || graph.selectedNode.id !== d.id) {
-        d3.select(e.target).attr('stroke', '#333').attr('stroke-width', 3)
+        d3.select(e.target).attr('stroke', nodeStrokeHover()).attr('stroke-width', 3)
       }
     })
     .on('mouseleave', (e, d) => {
       if (!graph.selectedNode || graph.selectedNode.id !== d.id) {
-        d3.select(e.target).attr('stroke', '#fff').attr('stroke-width', d.type === 'agent' ? 1 : 2.5)
+        d3.select(e.target).attr('stroke', nodeStroke()).attr('stroke-width', d.type === 'agent' ? 1 : 2.5)
       }
     })
     .call(d3.drag()
@@ -249,13 +252,17 @@ function render() {
   sim.alpha(0.8).restart()
 }
 
-// ── Highlight selected node (#E91E63 stroke) ────────────────────────
+// ── Highlight selected node (accent stroke) ─────────────────────────
 watch(() => graph.selectedNode, (sel) => {
   const root = d3.select(rootRef.value)
   if (!root.node()) return
+  const cs = getComputedStyle(document.documentElement)
+  const accent = cs.getPropertyValue('--c-red').trim()
+  const defaultStroke = cs.getPropertyValue('--c-node-stroke').trim()
+  const dimEdge = cs.getPropertyValue('--c-edge').trim()
 
   root.select('.layer-nodes').selectAll('circle')
-    .attr('stroke', d => d === sel ? '#E91E63' : '#fff')
+    .attr('stroke', d => d === sel ? accent : defaultStroke)
     .attr('stroke-width', d => d === sel ? 4 : d.type === 'agent' ? 1 : 2.5)
     .style('opacity', d => sel ? (d === sel ? 1 : isLinked(sel, d) ? 0.8 : 0.15) : 1)
 
@@ -267,10 +274,10 @@ watch(() => graph.selectedNode, (sel) => {
       return (srcId === sel.id || tgtId === sel.id) ? 1 : 0.04
     })
     .attr('stroke', d => {
-      if (!sel) return '#C0C0C0'
+      if (!sel) return dimEdge
       const srcId = typeof d.source === 'object' ? d.source.id : d.source
       const tgtId = typeof d.target === 'object' ? d.target.id : d.target
-      return (srcId === sel.id || tgtId === sel.id) ? '#E91E63' : '#E0E0E0'
+      return (srcId === sel.id || tgtId === sel.id) ? accent : dimEdge
     })
     .attr('stroke-width', d => {
       if (!sel) return (d.type === 'INVESTIGATES' || d.type === 'DEBATES') ? 0.5 : 1.5
@@ -320,14 +327,15 @@ onUnmounted(() => { if (sim) sim.stop() })
 .graph-wrap {
   width: 100%; height: 100%;
   position: relative; overflow: hidden;
-  background-color: #FAFAFA;
-  background-image: radial-gradient(#D0D0D0 1.5px, transparent 1.5px);
+  background-color: var(--c-graph-bg);
+  background-image: radial-gradient(var(--c-graph-dot) 1.5px, transparent 1.5px);
   background-size: 24px 24px;
+  transition: background-color 0.3s ease, background-image 0.3s ease;
 }
 svg { width: 100%; height: 100%; display: block; }
 
 .node-label {
-  fill: #333;
+  fill: var(--c-label);
   font-family: system-ui, sans-serif;
   font-size: 11px;
   font-weight: 500;
@@ -338,21 +346,22 @@ svg { width: 100%; height: 100%; display: block; }
 .zoom-ctrl {
   position: absolute; bottom: 20px; left: 20px;
   display: flex; flex-direction: column; gap: 4px;
-  background: #FFF;
-  border: 1px solid #EAEAEA;
+  background: var(--c-zoom-bg);
+  border: 1px solid var(--c-border);
   border-radius: 8px;
   padding: 6px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+  transition: var(--transition-theme);
 }
 .zoom-ctrl button {
   width: 32px; height: 32px;
   background: transparent; border: none;
-  color: #666; font-size: 14px;
+  color: var(--c-zoom-btn-color); font-size: 14px;
   display: flex; align-items: center; justify-content: center;
   border-radius: 6px;
   transition: all 0.2s;
 }
 .zoom-ctrl button:hover {
-  background: #F5F5F5; color: #000;
+  background: var(--c-zoom-btn-hover-bg); color: var(--c-text);
 }
 </style>

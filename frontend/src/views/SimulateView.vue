@@ -201,38 +201,39 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.sim-layout { display: flex; flex-direction: column; height: 100vh; background: #FFF; }
+.sim-layout { display: flex; flex-direction: column; height: 100vh; background: var(--c-void); transition: var(--transition-theme); }
 .sim-body { flex: 1; display: flex; overflow: hidden; }
 .sim-graph { flex: 1; position: relative; }
 
 .sim-sidebar {
   width: var(--panel-w);
   display: flex; flex-direction: column;
-  border-left: 1px solid #EAEAEA;
-  background: #FFF;
+  border-left: 1px solid var(--c-border);
+  background: var(--c-surface);
   overflow: hidden;
+  transition: var(--transition-theme);
 }
 
-.sb-header { padding: 16px; border-bottom: 1px solid #EAEAEA; }
-.sb-panel-title { font-size: 14px; font-weight: 600; color: #333; display: block; margin-bottom: 6px; }
-.sb-stats { display: flex; gap: 16px; font-size: 10px; color: #999; }
+.sb-header { padding: 16px; border-bottom: 1px solid var(--c-border); }
+.sb-panel-title { font-size: 14px; font-weight: 600; color: var(--c-text); display: block; margin-bottom: 6px; }
+.sb-stats { display: flex; gap: 16px; font-size: 10px; color: var(--c-text-3); }
 
-.sb-section { padding: 16px; border-bottom: 1px solid #EAEAEA; }
-.sb-title { font-size: 10px; color: #999; letter-spacing: 0.1em; margin-bottom: 12px; }
+.sb-section { padding: 16px; border-bottom: 1px solid var(--c-border); }
+.sb-title { font-size: 10px; color: var(--c-text-3); letter-spacing: 0.1em; margin-bottom: 12px; }
 
 .hyp { margin-bottom: 14px; }
 .hyp-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
-.hyp-id { font-size: 10px; color: #999; }
-.hyp-title { font-size: 13px; flex: 1; color: #333; font-weight: 500; }
-.hyp-prob { font-size: 18px; color: #E91E63; font-weight: 600; }
-.hyp-bar-track { height: 3px; background: #F0F0F0; border-radius: 2px; margin-bottom: 3px; }
-.hyp-bar { height: 100%; background: #E91E63; border-radius: 2px; transition: width 0.8s var(--ease); }
-.hyp-agents { font-size: 10px; color: #999; }
+.hyp-id { font-size: 10px; color: var(--c-text-3); }
+.hyp-title { font-size: 13px; flex: 1; color: var(--c-text-2); font-weight: 500; }
+.hyp-prob { font-size: 18px; color: var(--c-red); font-weight: 600; }
+.hyp-bar-track { height: 3px; background: var(--c-progress-bg); border-radius: 2px; margin-bottom: 3px; }
+.hyp-bar { height: 100%; background: var(--c-red); border-radius: 2px; transition: width 0.8s var(--ease); }
+.hyp-agents { font-size: 10px; color: var(--c-text-3); }
 
 .feed-section { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
 .feed-scroll { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
 .feed-item {
-  font-size: 10px; color: #666; line-height: 1.5;
+  font-size: 10px; color: var(--c-feed-text); line-height: 1.5;
   padding: 5px 8px; border-radius: 4px;
   animation: fade-in 0.3s var(--ease) both;
 }
@@ -241,40 +242,40 @@ onUnmounted(() => {
   padding: 1px 5px; border-radius: 3px;
   margin-right: 6px; text-transform: uppercase;
 }
-.feed-empty { font-size: 11px; color: #999; padding: 20px 0; text-align: center; }
+.feed-empty { font-size: 11px; color: var(--c-feed-empty); padding: 20px 0; text-align: center; }
 
 /* Archetype color classes */
-.feed--fa .feed-archetype { background: #FCE4EC; color: #C62828; }
-.feed--bp .feed-archetype { background: #E8EAF6; color: #283593; }
-.feed--es .feed-archetype { background: #E0F2F1; color: #00695C; }
-.feed--sp .feed-archetype { background: #FFF3E0; color: #E65100; }
-.feed--av .feed-archetype { background: #F3E5F5; color: #6A1B9A; }
-.feed--cr .feed-archetype { background: #E3F2FD; color: #1565C0; }
-.feed--sb .feed-archetype { background: #F1F8E9; color: #33691E; }
-.feed--cd .feed-archetype { background: #FBE9E7; color: #BF360C; }
-.feed--system { color: #E91E63; font-weight: 600; }
-.feed--system .feed-archetype { background: #E91E63; color: #FFF; }
-.feed--error { color: #C62828; background: #FFF1F1; }
-.feed--error .feed-archetype { background: #C62828; color: #FFF; }
+.feed--fa .feed-archetype { background: var(--c-feed-fa-bg); color: var(--c-feed-fa-txt); }
+.feed--bp .feed-archetype { background: var(--c-feed-bp-bg); color: var(--c-feed-bp-txt); }
+.feed--es .feed-archetype { background: var(--c-feed-es-bg); color: var(--c-feed-es-txt); }
+.feed--sp .feed-archetype { background: var(--c-feed-sp-bg); color: var(--c-feed-sp-txt); }
+.feed--av .feed-archetype { background: var(--c-feed-av-bg); color: var(--c-feed-av-txt); }
+.feed--cr .feed-archetype { background: var(--c-feed-cr-bg); color: var(--c-feed-cr-txt); }
+.feed--sb .feed-archetype { background: var(--c-feed-sb-bg); color: var(--c-feed-sb-txt); }
+.feed--cd .feed-archetype { background: var(--c-feed-cd-bg); color: var(--c-feed-cd-txt); }
+.feed--system { color: var(--c-red); font-weight: 600; }
+.feed--system .feed-archetype { background: var(--c-red); color: #FFF; }
+.feed--error { color: var(--c-error-text); background: var(--c-feed-error-bg); }
+.feed--error .feed-archetype { background: var(--c-error-text); color: #FFF; }
 
-.sb-controls { padding: 14px; border-top: 1px solid #EAEAEA; }
+.sb-controls { padding: 14px; border-top: 1px solid var(--c-border); }
 .sb-controls .btn { width: 100%; justify-content: center; }
 
-.progress-bar { height: 3px; background: #F0F0F0; border-radius: 2px; margin-bottom: 8px; }
-.progress-fill { height: 100%; background: #E91E63; border-radius: 2px; transition: width 0.5s var(--ease); }
-.progress-label { font-size: 10px; color: #999; display: block; text-align: center; }
+.progress-bar { height: 3px; background: var(--c-progress-bg); border-radius: 2px; margin-bottom: 8px; }
+.progress-fill { height: 100%; background: var(--c-red); border-radius: 2px; transition: width 0.5s var(--ease); }
+.progress-label { font-size: 10px; color: var(--c-text-3); display: block; text-align: center; }
 
 .error-toast {
   display: flex; align-items: center; gap: 8px;
   padding: 10px 14px; margin: 0 16px 8px;
-  background: #FFF1F1; border: 1px solid #FFCDD2;
-  border-radius: 6px; font-size: 12px; color: #C62828;
+  background: var(--c-error-bg); border: 1px solid var(--c-error-border);
+  border-radius: 6px; font-size: 12px; color: var(--c-error-text);
   animation: fade-in 0.3s var(--ease) both;
 }
 .error-icon { font-size: 14px; }
 .error-text { flex: 1; }
 .error-dismiss {
-  background: none; border: none; color: #C62828;
+  background: none; border: none; color: var(--c-error-text);
   cursor: pointer; font-size: 14px; padding: 0;
 }
 

@@ -1,29 +1,31 @@
 /* ══════════════════════════════════════════════════════════════════════
-   CrimeScope — Global Design System (Light Theme)
-   Palette: White / Light-Gray / Crimson Accents
+   CrimeScope — Global Design System
+   Light Mode (default) + Dark Mode via [data-theme="dark"]
    ══════════════════════════════════════════════════════════════════════ */
 
-/* ── Tokens ──────────────────────────────────────────────────────────── */
-:root {
+/* ── Light Mode Tokens ───────────────────────────────────────────────── */
+:root, [data-theme="light"] {
   /* surfaces */
   --c-void:        #F5F5F5;
   --c-canvas:      #FAFAFA;
   --c-surface:     #FFFFFF;
   --c-panel:       rgba(255, 255, 255, 0.96);
+  --c-graph-bg:    #FAFAFA;
+  --c-graph-dot:   #D0D0D0;
 
   /* borders */
   --c-badge:       #F0F0F0;
   --c-border:      #EAEAEA;
   --c-border-hi:   #C0C0C0;
 
-  /* entity colors (warm, saturated palette) */
+  /* entity colors */
   --c-person:      #E91E63;
   --c-location:    #1A936F;
   --c-evidence:    #004E89;
   --c-event:       #FF6B35;
   --c-agent:       #9b59b6;
 
-  /* accent */
+  /* accent — Crimson */
   --c-red:         #E91E63;
   --c-red-light:   #F06292;
   --c-red-dim:     rgba(233, 30, 99, 0.1);
@@ -35,22 +37,123 @@
   --c-sage:        #4CAF50;
   --c-blue:        #2196F3;
   --c-blue-light:  #64B5F6;
-  --c-brown:       #8D6E63;
+  --c-teal:        #00B4A6;
 
   /* text */
-  --c-text:        #333333;
-  --c-text-2:      #666666;
+  --c-text:        #1A1A1A;
+  --c-text-2:      #555555;
   --c-text-3:      #999999;
+
+  /* nodes */
+  --c-node-stroke:   #ffffff;
+  --c-node-stroke-hover: #333333;
+  --c-edge:          #C0C0C0;
+  --c-label:         #333333;
+  --c-zoom-bg:       #FFFFFF;
+  --c-zoom-btn-hover-bg: #F5F5F5;
+  --c-zoom-btn-color: #666666;
+
+  /* feed */
+  --c-feed-text:     #666666;
+  --c-feed-empty:    #999999;
+  --c-feed-fa-bg:    #FCE4EC; --c-feed-fa-txt: #C62828;
+  --c-feed-bp-bg:    #E8EAF6; --c-feed-bp-txt: #283593;
+  --c-feed-es-bg:    #E0F2F1; --c-feed-es-txt: #00695C;
+  --c-feed-sp-bg:    #FFF3E0; --c-feed-sp-txt: #E65100;
+  --c-feed-av-bg:    #F3E5F5; --c-feed-av-txt: #6A1B9A;
+  --c-feed-cr-bg:    #E3F2FD; --c-feed-cr-txt: #1565C0;
+  --c-feed-sb-bg:    #F1F8E9; --c-feed-sb-txt: #33691E;
+  --c-feed-cd-bg:    #FBE9E7; --c-feed-cd-txt: #BF360C;
+  --c-feed-error-bg: #FFF1F1;
+
+  /* progress + errors */
+  --c-progress-bg:  #F0F0F0;
+  --c-error-bg:     #FFF1F1;
+  --c-error-border: #FFCDD2;
+  --c-error-text:   #C62828;
 
   /* typography */
   --ff-display:    'Space Grotesk', system-ui, sans-serif;
-  --ff-body:       'Noto Sans SC', 'Inter', system-ui, sans-serif;
+  --ff-body:       'Inter', system-ui, sans-serif;
   --ff-mono:       'JetBrains Mono', monospace;
 
   /* layout */
   --panel-w:       340px;
   --topbar-h:      60px;
   --ease:          cubic-bezier(0.25, 0.8, 0.25, 1);
+
+  /* transitions */
+  --transition-theme: background 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+}
+
+/* ── Dark Mode Overrides ─────────────────────────────────────────────── */
+[data-theme="dark"] {
+  /* surfaces — cinematic deep */
+  --c-void:        #0A0A0B;
+  --c-canvas:      #111115;
+  --c-surface:     #18181F;
+  --c-panel:       rgba(24, 24, 31, 0.97);
+  --c-graph-bg:    #0E0E12;
+  --c-graph-dot:   #2A2A35;
+
+  /* borders */
+  --c-badge:       #1F1F28;
+  --c-border:      #252530;
+  --c-border-hi:   #3A3A50;
+
+  /* entity colors — glowing variants */
+  --c-person:      #FF4081;
+  --c-location:    #26FFB1;
+  --c-evidence:    #40A9FF;
+  --c-event:       #FF7043;
+  --c-agent:       #CE93D8;
+
+  /* accent — Neon Crimson */
+  --c-red:         #FF4081;
+  --c-red-light:   #FF80AB;
+  --c-red-dim:     rgba(255, 64, 129, 0.12);
+  --c-red-glow:    rgba(255, 64, 129, 0.35);
+
+  /* secondary accents */
+  --c-amber:       #FFB300;
+  --c-amber-light: #FFD740;
+  --c-sage:        #69F0AE;
+  --c-blue:        #40C4FF;
+  --c-blue-light:  #80D8FF;
+  --c-teal:        #00E5C4;
+
+  /* text */
+  --c-text:        #EEEEF5;
+  --c-text-2:      #A0A0B8;
+  --c-text-3:      #60607A;
+
+  /* graph nodes */
+  --c-node-stroke:        #0E0E12;
+  --c-node-stroke-hover:  #FF4081;
+  --c-edge:               #3A3A55;
+  --c-label:              #C0C0D8;
+  --c-zoom-bg:            #18181F;
+  --c-zoom-btn-hover-bg:  #252530;
+  --c-zoom-btn-color:     #A0A0B8;
+
+  /* feed — warmer in dark */
+  --c-feed-text:     #A0A0B8;
+  --c-feed-empty:    #60607A;
+  --c-feed-fa-bg:    rgba(255, 64, 129, 0.12); --c-feed-fa-txt: #FF80AB;
+  --c-feed-bp-bg:    rgba(100, 120, 255, 0.12); --c-feed-bp-txt: #90A8FF;
+  --c-feed-es-bg:    rgba(38, 255, 177, 0.10); --c-feed-es-txt: #26FFB1;
+  --c-feed-sp-bg:    rgba(255, 112, 67, 0.12); --c-feed-sp-txt: #FF7043;
+  --c-feed-av-bg:    rgba(206, 147, 216, 0.12); --c-feed-av-txt: #CE93D8;
+  --c-feed-cr-bg:    rgba(64, 196, 255, 0.10); --c-feed-cr-txt: #40C4FF;
+  --c-feed-sb-bg:    rgba(105, 240, 174, 0.10); --c-feed-sb-txt: #69F0AE;
+  --c-feed-cd-bg:    rgba(255, 112, 67, 0.10); --c-feed-cd-txt: #FF7043;
+  --c-feed-error-bg: rgba(255, 64, 129, 0.08);
+
+  /* progress + errors */
+  --c-progress-bg:  #252530;
+  --c-error-bg:     rgba(255, 64, 129, 0.08);
+  --c-error-border: rgba(255, 64, 129, 0.3);
+  --c-error-text:   #FF80AB;
 }
 
 /* ── Reset ───────────────────────────────────────────────────────────── */
@@ -64,6 +167,7 @@ body {
   line-height: 1.5;
   overflow-x: hidden;
   min-height: 100vh;
+  transition: var(--transition-theme);
 }
 
 a { color: inherit; text-decoration: none; }
@@ -74,10 +178,11 @@ img { display: block; max-width: 100%; }
 h1, h2, h3, .font-display { font-family: var(--ff-display); font-weight: 600; }
 .font-mono { font-family: var(--ff-mono); }
 
-/* ── Glass panel (light mode) ────────────────────────────────────────── */
+/* ── Glass panel ─────────────────────────────────────────────────────── */
 .glass {
   background: var(--c-panel);
   border: 1px solid var(--c-border);
+  transition: var(--transition-theme);
 }
 
 /* ── Badge ────────────────────────────────────────────────────────────── */
@@ -105,7 +210,7 @@ h1, h2, h3, .font-display { font-family: var(--ff-display); font-weight: 600; }
   border-radius: 6px;
   transition: all 0.2s ease;
 }
-.btn:hover { border-color: #CCC; background: #F5F5F5; }
+.btn:hover { border-color: var(--c-border-hi); background: var(--c-canvas); }
 .btn--primary {
   background: var(--c-red); color: #fff;
   border-color: var(--c-red);
@@ -115,8 +220,8 @@ h1, h2, h3, .font-display { font-family: var(--ff-display); font-weight: 600; }
 /* ── Scrollbar ───────────────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #D0D0D0; border-radius: 2px; }
-::-webkit-scrollbar-thumb:hover { background: #B0B0B0; }
+::-webkit-scrollbar-thumb { background: var(--c-border-hi); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: var(--c-text-3); }
 
 /* ── Animations ──────────────────────────────────────────────────────── */
 @keyframes pulse-red {
