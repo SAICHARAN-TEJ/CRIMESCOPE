@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Cases router — CRUD for investigation cases."""
 
 from fastapi import APIRouter, HTTPException

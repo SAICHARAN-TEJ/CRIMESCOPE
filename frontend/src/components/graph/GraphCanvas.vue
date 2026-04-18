@@ -8,7 +8,7 @@
       </g>
     </svg>
 
-    <!-- Zoom controls (MiroFish style) -->
+    <!-- Zoom controls -->
     <div class="zoom-ctrl">
       <button @click="doZoom(1.4)" title="Zoom in">
         <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -36,7 +36,7 @@ const rootRef = ref(null)
 let sim = null
 let zoomBehavior = null
 
-// ── MiroFish-style entity color palette ──────────────────────────────
+// ── Entity color palette ─────────────────────────────────────────────
 const ENTITY_COLORS = [
   '#E91E63', '#004E89', '#1A936F', '#FF6B35', '#C5283D',
   '#7B2D8E', '#3498db', '#E9724C', '#27ae60', '#f39c12'
@@ -81,7 +81,7 @@ onMounted(() => {
     }
   })
 
-  // Force simulation — MiroFish params
+  // Force simulation params
   sim = d3.forceSimulation()
     .force('link', d3.forceLink().id(d => d.id).distance(d => {
       const baseDistance = 150
@@ -119,7 +119,7 @@ function tick() {
     .attr('x', d => d.x).attr('y', d => d.y + radius(d) + 14)
 }
 
-// ── Curved path generator (MiroFish style) ───────────────────────────
+// ── Curved path generator ────────────────────────────────────────────
 function getLinkPath(d) {
   const sx = d.source.x, sy = d.source.y
   const tx = d.target.x, ty = d.target.y
@@ -193,7 +193,7 @@ function render() {
     .transition().duration(500)
     .style('opacity', d => (d.type === 'INVESTIGATES' || d.type === 'DEBATES') ? 0.15 : 0.6)
 
-  // ── nodes (MiroFish: colored fill + white stroke) ──
+  // ── nodes (colored fill + white stroke) ──
   const nodeSel = root.select('.layer-nodes').selectAll('circle').data(nodes, d => d.id)
   nodeSel.exit().transition().duration(300).attr('r', 0).remove()
   nodeSel.enter().append('circle')
@@ -234,7 +234,7 @@ function render() {
     .transition().delay((_, i) => Math.min(i * 2, 400)).duration(300)
     .attr('r', d => radius(d))
 
-  // ── labels (only non-agent nodes, MiroFish style) ──
+  // ── labels (only non-agent nodes) ──
   const labelNodes = nodes.filter(n => n.type !== 'agent')
   const lblSel = root.select('.layer-labels').selectAll('text').data(labelNodes, d => d.id)
   lblSel.exit().remove()
@@ -249,7 +249,7 @@ function render() {
   sim.alpha(0.8).restart()
 }
 
-// ── Highlight selected node (MiroFish style: #E91E63 stroke) ─────────
+// ── Highlight selected node (#E91E63 stroke) ────────────────────────
 watch(() => graph.selectedNode, (sel) => {
   const root = d3.select(rootRef.value)
   if (!root.node()) return

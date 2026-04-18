@@ -1,6 +1,6 @@
 /**
  * Harlow Street — DENSE graph dataset.
- * ~120 nodes, ~160 edges to create the MiroFish-style dense network.
+ * ~120 nodes, ~160 edges to create a dense forensic knowledge network.
  *
  * Node types: person, location, evidence, event, agent
  * Groups: victim, suspect, witness, scene, poi, physical, digital,

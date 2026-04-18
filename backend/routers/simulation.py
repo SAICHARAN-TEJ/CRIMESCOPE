@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Simulation router — start, stream, and query simulations."""
 
 from fastapi import APIRouter, HTTPException

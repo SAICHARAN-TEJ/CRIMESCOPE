@@ -3,270 +3,292 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>CrimeScope — Multi-Agent Swarm Intelligence</title>
-  <meta name="description" content="1,000 AI agents. 8 cognitive archetypes. 30 rounds of adversarial reasoning. One probable cause." />
+  <title>CrimeScope — Swarm Intelligence for Criminal Investigation</title>
+  <meta name="description" content="1,000 AI agents reconstruct the past. One truth emerges. CrimeScope deploys swarm intelligence for criminal event reconstruction." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <!-- ── NAV ─────────────────────────────────────────────────────────── -->
-  <nav class="nav" id="nav">
-    <a href="#" class="nav-brand font-display">CRIMESCOPE</a>
-    <div class="nav-links">
-      <a href="#problem">Problem</a>
-      <a href="#how">How It Works</a>
-      <a href="#swarm">The Swarm</a>
-      <a href="#tech">Tech Stack</a>
-      <a href="#demo">Demo</a>
+
+  <!-- ═══ NAV ═══════════════════════════════════════════════════════════ -->
+  <nav id="nav">
+    <div class="nav-inner">
+      <a href="#" class="nav-brand">CRIMESCOPE</a>
+      <div class="nav-links">
+        <a href="#how">How It Works</a>
+        <a href="#archetypes">Agents</a>
+        <a href="#demo">Demo</a>
+        <a href="#stack">Stack</a>
+      </div>
+      <a href="#cta" class="nav-cta">Launch Engine →</a>
     </div>
-    <a href="#cta" class="nav-cta btn btn--primary">Launch Dashboard →</a>
   </nav>
 
-  <!-- ── S1: HERO ────────────────────────────────────────────────────── -->
-  <section class="hero" id="hero">
-    <div class="hero-grid">
-      <div class="hero-text">
-        <span class="overline font-mono" id="hero-overline">SWARM INTELLIGENCE × FORENSIC ANALYSIS</span>
-        <h1 class="font-display" id="hero-h1">Deploy 1,000<br>AI Agents.</h1>
-        <p id="hero-p">Eight cognitive archetypes. Thirty rounds of adversarial reasoning. One probable cause. CrimeScope is the world's first multi-agent crime reconstruction engine.</p>
-        <div class="hero-btns" id="hero-btns">
-          <a href="#cta" class="btn btn--primary">Start Investigation →</a>
-          <a href="#how" class="btn">Watch Demo</a>
-        </div>
+  <!-- ═══ 01 HERO ═══════════════════════════════════════════════════════ -->
+  <section id="hero" class="section hero">
+    <canvas id="hero-canvas"></canvas>
+    <div class="hero-content">
+      <span id="hero-overline" class="overline">SWARM INTELLIGENCE ENGINE</span>
+      <h1 id="hero-h1">1,000 Agents<br/>Reconstruct the Past</h1>
+      <p id="hero-p">Deploy autonomous AI agents across 8 cognitive archetypes to reconstruct criminal event timelines through adversarial hypothesis testing and Bayesian convergence.</p>
+      <div id="hero-btns" class="hero-btns">
+        <a href="#cta" class="btn-primary">Launch Investigation →</a>
+        <a href="#demo" class="btn-ghost">View Demo Case</a>
       </div>
-      <div class="hero-viz" id="hero-viz">
-        <canvas id="hero-canvas"></canvas>
+      <div id="hero-stats" class="hero-stats">
+        <div class="stat"><span class="stat-val">1,000</span><span class="stat-label">Active Agents</span></div>
+        <div class="stat"><span class="stat-val">8</span><span class="stat-label">Archetypes</span></div>
+        <div class="stat"><span class="stat-val">30</span><span class="stat-label">Sim Rounds</span></div>
+        <div class="stat"><span class="stat-val">&lt;8min</span><span class="stat-label">Full Run</span></div>
       </div>
-    </div>
-    <div class="hero-stats" id="hero-stats">
-      <div class="stat"><span class="stat-val font-display">1,000</span><span class="stat-lbl font-mono">AGENTS</span></div>
-      <div class="stat"><span class="stat-val font-display">8</span><span class="stat-lbl font-mono">ARCHETYPES</span></div>
-      <div class="stat"><span class="stat-val font-display">4</span><span class="stat-lbl font-mono">LLM MODELS</span></div>
-      <div class="stat"><span class="stat-val font-display">30</span><span class="stat-lbl font-mono">SIM ROUNDS</span></div>
-      <div class="stat"><span class="stat-val font-display">97%</span><span class="stat-lbl font-mono">CONVERGENCE</span></div>
     </div>
   </section>
 
-  <!-- ── S2: PROBLEM ─────────────────────────────────────────────────── -->
-  <section class="section" id="problem">
-    <div class="section-inner">
-      <span class="overline font-mono">THE PROBLEM</span>
-      <h2 class="font-display">Single-investigator bias<br>kills cases.</h2>
+  <!-- ═══ 02 PROBLEM ═══════════════════════════════════════════════════ -->
+  <section id="problem" class="section">
+    <div class="container">
+      <span class="overline">THE PROBLEM</span>
+      <h2>Criminal investigations are hindered by <span class="text-accent">cognitive bias</span></h2>
       <div class="problem-grid">
-        <div class="problem-card glass">
-          <span class="problem-icon">🔍</span>
-          <h3>Tunnel Vision</h3>
-          <p>Detectives fixate on a lead. Contradictory evidence gets buried or reframed.</p>
+        <div class="glass">
+          <div class="glass-icon">🧠</div>
+          <h3>Confirmation Bias</h3>
+          <p>Investigators anchor on early theories and unconsciously filter contradicting evidence.</p>
         </div>
-        <div class="problem-card glass">
-          <span class="problem-icon">⏱</span>
-          <h3>Time Pressure</h3>
-          <p>Cold cases multiply. The 48-hour rule means most leads die before review.</p>
+        <div class="glass">
+          <div class="glass-icon">⏱️</div>
+          <h3>Information Overload</h3>
+          <p>Complex cases generate thousands of data points — no human team can cross-reference them all.</p>
         </div>
-        <div class="problem-card glass">
-          <span class="problem-icon">📊</span>
-          <h3>No Base Rates</h3>
-          <p>Gut instinct replaces statistical reasoning. Prosecutor fallacy dominates.</p>
+        <div class="glass">
+          <div class="glass-icon">🔗</div>
+          <h3>Fragmented Timelines</h3>
+          <p>Witness accounts conflict, CCTV has gaps, and physical evidence tells incomplete stories.</p>
         </div>
       </div>
     </div>
   </section>
 
-  <!-- ── S3: HOW IT WORKS ────────────────────────────────────────────── -->
-  <section class="section section--dark" id="how">
-    <div class="section-inner">
-      <span class="overline font-mono">HOW IT WORKS</span>
-      <h2 class="font-display">Four stages.<br>zero human bias.</h2>
+  <!-- ═══ 03 HOW IT WORKS ══════════════════════════════════════════════ -->
+  <section id="how" class="section">
+    <div class="container">
+      <span class="overline">HOW IT WORKS</span>
+      <h2>Three modes. One truth.</h2>
       <div class="steps-grid">
         <div class="step">
-          <span class="step-num font-display">01</span>
-          <h3>INGEST</h3>
-          <p>Upload crime scene photos, police reports, witness statements, CCTV logs. Multi-modal pipeline extracts structured evidence.</p>
+          <div class="step-num">01</div>
+          <h3>Evidence Ingestion</h3>
+          <p>Upload crime scene photos, documents, or video. The pipeline extracts entities, timelines, and contradictions using Gemini Vision and DeepSeek reasoning models.</p>
         </div>
         <div class="step">
-          <span class="step-num font-display">02</span>
-          <h3>SPAWN</h3>
-          <p>1,000 agents deploy across 8 archetypes — forensic analysts, suspect personas, contradiction detectors — each with unique cognitive bias.</p>
+          <div class="step-num">02</div>
+          <h3>Swarm Simulation</h3>
+          <p>1,000 agents — across 8 forensic archetypes — debate hypotheses for 30 rounds. Each agent carries a unique cognitive bias and builds independent causal chains.</p>
         </div>
         <div class="step">
-          <span class="step-num font-display">03</span>
-          <h3>SIMULATE</h3>
-          <p>30 rounds of adversarial reasoning. Agents vote on causal hypotheses, challenge evidence, and update their chains.</p>
-        </div>
-        <div class="step">
-          <span class="step-num font-display">04</span>
-          <h3>REPORT</h3>
-          <p>Bayesian convergence produces a Probable Cause report with dissent logs, confidence intervals, and graph intelligence.</p>
+          <div class="step-num">03</div>
+          <h3>Probable Cause Report</h3>
+          <p>The Bayesian Probable Cause Engine aggregates weighted votes, identifies consensus facts, and surfaces minority dissent into a ranked investigation report.</p>
         </div>
       </div>
     </div>
   </section>
 
-  <!-- ── S4: ARCHETYPES ──────────────────────────────────────────────── -->
-  <section class="section" id="archetypes">
-    <div class="section-inner">
-      <span class="overline font-mono">COGNITIVE DIVERSITY</span>
-      <h2 class="font-display">8 minds.<br>One swarm.</h2>
+  <!-- ═══ 04 SWARM VISUALIZATION ═══════════════════════════════════════ -->
+  <section id="swarm" class="section">
+    <div class="container">
+      <span class="overline">SWARM INTELLIGENCE</span>
+      <h2>Watch 1,000 agents <span class="text-accent">converge</span></h2>
+      <p class="section-desc">Each particle represents an autonomous agent. Connections form as agents share evidence and challenge hypotheses. The network self-organises toward consensus.</p>
+      <div class="swarm-canvas-wrap">
+        <canvas id="swarm-canvas"></canvas>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ 05 ARCHETYPES ════════════════════════════════════════════════ -->
+  <section id="archetypes" class="section">
+    <div class="container">
+      <span class="overline">AGENT ARCHETYPES</span>
+      <h2>Eight cognitive roles, one investigation</h2>
       <div class="arch-grid">
-        <div class="arch-card glass" data-count="120">
-          <span class="arch-emoji">🔬</span>
+        <div class="arch-card">
+          <div class="arch-count">120</div>
           <h3>Forensic Analyst</h3>
-          <p>Physical evidence, trace analysis, technical data</p>
-          <span class="arch-n font-mono">120 AGENTS</span>
+          <p>Physical evidence, trace materials, cause of death analysis</p>
         </div>
-        <div class="arch-card glass" data-count="100">
-          <span class="arch-emoji">🧠</span>
+        <div class="arch-card">
+          <div class="arch-count">100</div>
           <h3>Behavioral Profiler</h3>
-          <p>Psychological markers, victimology, motivation</p>
-          <span class="arch-n font-mono">100 AGENTS</span>
+          <p>Psychology, motive analysis, pre-crime planning patterns</p>
         </div>
-        <div class="arch-card glass" data-count="150">
-          <span class="arch-emoji">👁</span>
+        <div class="arch-card">
+          <div class="arch-count">150</div>
           <h3>Eyewitness Simulator</h3>
-          <p>Observation errors, cognitive bias in recall</p>
-          <span class="arch-n font-mono">150 AGENTS</span>
+          <p>Timeline reconstruction from partial observational windows</p>
         </div>
-        <div class="arch-card glass" data-count="200">
-          <span class="arch-emoji">🎭</span>
+        <div class="arch-card">
+          <div class="arch-count">200</div>
           <h3>Suspect Persona</h3>
-          <p>Defensive, deceptive, self-preserving reasoning</p>
-          <span class="arch-n font-mono">200 AGENTS</span>
+          <p>Defensive and deceptive reasoning — plausible perpetrator actions</p>
         </div>
-        <div class="arch-card glass" data-count="80">
-          <span class="arch-emoji">⏰</span>
+        <div class="arch-card">
+          <div class="arch-count">80</div>
           <h3>Alibi Verifier</h3>
-          <p>Timeline gaps, digital footprint cross-reference</p>
-          <span class="arch-n font-mono">80 AGENTS</span>
+          <p>Cross-check claimed timelines against physical constraints</p>
         </div>
-        <div class="arch-card glass" data-count="120">
-          <span class="arch-emoji">🗺</span>
+        <div class="arch-card">
+          <div class="arch-count">120</div>
           <h3>Scene Reconstructor</h3>
-          <p>Spatial relationships, physical logistics</p>
-          <span class="arch-n font-mono">120 AGENTS</span>
+          <p>Spatial and temporal action sequencing at the crime scene</p>
         </div>
-        <div class="arch-card glass" data-count="130">
-          <span class="arch-emoji">📈</span>
+        <div class="arch-card">
+          <div class="arch-count">130</div>
           <h3>Statistical Baseline</h3>
-          <p>Historical probability, base-rate reasoning</p>
-          <span class="arch-n font-mono">130 AGENTS</span>
+          <p>Base-rate crime statistics and demographic prior analysis</p>
         </div>
-        <div class="arch-card glass" data-count="100">
-          <span class="arch-emoji">⚡</span>
+        <div class="arch-card">
+          <div class="arch-count">100</div>
           <h3>Contradiction Detector</h3>
-          <p>Pure logic gate, inconsistency hunting</p>
-          <span class="arch-n font-mono">100 AGENTS</span>
+          <p>Hunt inconsistencies across all other agents' outputs</p>
         </div>
       </div>
     </div>
   </section>
 
-  <!-- ── S5: SWARM VIZ ───────────────────────────────────────────────── -->
-  <section class="section section--dark" id="swarm">
-    <div class="section-inner section-center">
-      <span class="overline font-mono">THE SWARM</span>
-      <h2 class="font-display">Watch 1,000 minds converge.</h2>
-      <p class="section-desc">Real-time force-directed graph. Every node is a person, location, evidence item, or event. Every edge is a causal hypothesis under adversarial review.</p>
-      <div class="swarm-preview glass">
-        <div class="swarm-mockup">
-          <canvas id="swarm-canvas"></canvas>
+  <!-- ═══ 06 DEMO CASE ═════════════════════════════════════════════════ -->
+  <section id="demo" class="section">
+    <div class="container">
+      <span class="overline">DEMO CASE</span>
+      <h2>The Harlow Street Incident</h2>
+      <p class="section-desc">Margaret Voss disappeared from a parking garage on Harlow Street. 22-minute CCTV blackout. Staged handbag. Conflicting alibis. Can 1,000 agents reconstruct what happened?</p>
+      <div class="rp-grid">
+        <div class="rp-finding">
+          <span class="rp-tag">FACT 01</span>
+          <p>Victim left pharmacy at 06:38 PM, arrived at garage within 4 minutes</p>
+        </div>
+        <div class="rp-finding">
+          <span class="rp-tag">FACT 02</span>
+          <p>CCTV experienced a 22-minute failure from 06:58 to 07:20 PM</p>
+        </div>
+        <div class="rp-finding">
+          <span class="rp-tag">FACT 03</span>
+          <p>Handbag concealed in L1 trash bin — wallet intact, keys missing</p>
+        </div>
+        <div class="rp-finding">
+          <span class="rp-tag">FINDING</span>
+          <p>Leading hypothesis: Planned Ambush — 45% consensus from 450 agents</p>
         </div>
       </div>
     </div>
   </section>
 
-  <!-- ── S6: TECH STACK ──────────────────────────────────────────────── -->
-  <section class="section" id="tech">
-    <div class="section-inner">
-      <span class="overline font-mono">ARCHITECTURE</span>
-      <h2 class="font-display">Built for the<br>free tier.</h2>
-      <div class="tech-grid">
-        <div class="tech-card glass"><h3>DeepSeek V3</h3><p>Primary reasoning — free via OpenRouter</p></div>
-        <div class="tech-card glass"><h3>DeepSeek R1</h3><p>Chain-of-thought profiling — free tier</p></div>
-        <div class="tech-card glass"><h3>Llama 3.3 70B</h3><p>Fast cross-referencing — 200 RPM</p></div>
-        <div class="tech-card glass"><h3>Gemini 2.5 Pro</h3><p>Vision pipeline — crime scene analysis</p></div>
-        <div class="tech-card glass"><h3>Neo4j</h3><p>Knowledge graph — entity relationships</p></div>
-        <div class="tech-card glass"><h3>ChromaDB</h3><p>Agent episodic memory — embeddings</p></div>
-        <div class="tech-card glass"><h3>Supabase</h3><p>Postgres + Auth + Real-time — BaaS</p></div>
-        <div class="tech-card glass"><h3>D3.js</h3><p>Force-directed graphs — the centrepiece</p></div>
-      </div>
-    </div>
-  </section>
-
-  <!-- ── S7: REPORT PREVIEW ──────────────────────────────────────────── -->
-  <section class="section section--dark" id="report">
-    <div class="section-inner section-center">
-      <span class="overline font-mono">OUTPUT</span>
-      <h2 class="font-display">Probable Cause Report.</h2>
-      <div class="report-preview glass">
-        <div class="rp-header">
-          <span class="badge badge--lime font-mono">CLASSIFIED</span>
-          <h3 class="font-display">HARLOW ST PARKING GARAGE</h3>
+  <!-- ═══ 07 STACK ═════════════════════════════════════════════════════ -->
+  <section id="stack" class="section">
+    <div class="container">
+      <span class="overline">TECHNOLOGY STACK</span>
+      <h2>Built for production forensics</h2>
+      <div class="stack-grid">
+        <div class="glass">
+          <h3>LLM Models</h3>
+          <p>DeepSeek V3 + R1 for reasoning, Llama 3.3 70B for cross-referencing, Gemini 2.5 Pro for vision analysis. All via OpenRouter.</p>
         </div>
-        <div class="rp-meter">
-          <div class="rp-meter-fill" style="width:82%"></div>
-          <span class="rp-meter-val font-display">82%</span>
-          <span class="rp-meter-lbl font-mono">CONSENSUS</span>
+        <div class="glass">
+          <h3>Knowledge Graph</h3>
+          <p>Neo4j Community with MERGE-based upserts and certainty-weighted edges. Every entity tracked with provenance.</p>
         </div>
-        <div class="rp-findings">
-          <div class="rp-finding"><span class="font-mono">H-001</span> Planned Ambush — 45%</div>
-          <div class="rp-finding"><span class="font-mono">H-002</span> Staged Disappearance — 30%</div>
-          <div class="rp-finding"><span class="font-mono">H-003</span> Third-Party Opportunist — 15%</div>
-          <div class="rp-finding"><span class="font-mono">H-004</span> Accidental Discovery — 10%</div>
+        <div class="glass">
+          <h3>Agent Memory</h3>
+          <p>Dual-layer (episodic + semantic) via mem0 with ChromaDB fallback. Per-case namespace isolation with session cleanup.</p>
+        </div>
+        <div class="glass">
+          <h3>Infrastructure</h3>
+          <p>Docker Compose orchestration. FastAPI async backend. Vue 3 + D3.js frontend. AGPL-3.0 open source.</p>
         </div>
       </div>
     </div>
   </section>
 
-  <!-- ── S8: TARGET USERS ────────────────────────────────────────────── -->
-  <section class="section" id="users">
-    <div class="section-inner">
-      <span class="overline font-mono">WHO IS THIS FOR</span>
-      <h2 class="font-display">Built for builders.</h2>
-      <div class="users-grid">
-        <div class="user-card glass">
-          <h3>Law Enforcement</h3>
-          <p>Augment cold case review with multi-agent reconstruction. Every hypothesis has a paper trail.</p>
+  <!-- ═══ 08 ARCHITECTURE ══════════════════════════════════════════════ -->
+  <section id="arch" class="section">
+    <div class="container">
+      <span class="overline">ARCHITECTURE</span>
+      <h2>End-to-end investigation pipeline</h2>
+      <div class="arch-diagram">
+        <div class="arch-layer">
+          <span class="arch-label">INPUT</span>
+          <div class="arch-boxes">
+            <div class="arch-box">📷 Photos</div>
+            <div class="arch-box">📄 Documents</div>
+            <div class="arch-box">🎬 Video</div>
+          </div>
         </div>
-        <div class="user-card glass">
-          <h3>Legal Counsel</h3>
-          <p>Probable cause reports with dissent logs and confidence intervals for pre-trial motions.</p>
+        <div class="arch-arrow">↓</div>
+        <div class="arch-layer">
+          <span class="arch-label">PIPELINE</span>
+          <div class="arch-boxes">
+            <div class="arch-box">Vision Model</div>
+            <div class="arch-box">3-Pass Extraction</div>
+            <div class="arch-box">Contradiction Detect</div>
+          </div>
         </div>
-        <div class="user-card glass">
-          <h3>AI Researchers</h3>
-          <p>A live testbed for swarm intelligence, adversarial LLM debate, and epistemic modesty.</p>
+        <div class="arch-arrow">↓</div>
+        <div class="arch-layer">
+          <span class="arch-label">SWARM</span>
+          <div class="arch-boxes">
+            <div class="arch-box highlight">1,000 Agents × 30 Rounds</div>
+          </div>
+        </div>
+        <div class="arch-arrow">↓</div>
+        <div class="arch-layer">
+          <span class="arch-label">OUTPUT</span>
+          <div class="arch-boxes">
+            <div class="arch-box">Probable Cause Report</div>
+            <div class="arch-box">Knowledge Graph</div>
+            <div class="arch-box">Agent Interrogation</div>
+          </div>
         </div>
       </div>
     </div>
   </section>
 
-  <!-- ── S9: DEMO ────────────────────────────────────────────────────── -->
-  <section class="section section--dark" id="demo">
-    <div class="section-inner section-center">
-      <span class="overline font-mono">TRY IT</span>
-      <h2 class="font-display">Harlow Street Demo.</h2>
-      <p class="section-desc">A pharmacist disappears from a parking garage. 22 minutes of CCTV blind spot. Witness statements contradict. Deploy the swarm and see what converges.</p>
-      <a href="http://localhost:3000" class="btn btn--primary" id="demo-btn">Launch Dashboard →</a>
+  <!-- ═══ 09 OPEN SOURCE ═══════════════════════════════════════════════ -->
+  <section id="oss" class="section">
+    <div class="container">
+      <span class="overline">OPEN SOURCE</span>
+      <h2>AGPL-3.0 — Fork it. Extend it. Deploy it.</h2>
+      <p class="section-desc">CrimeScope is fully open-source. Every model call, every agent prompt, every inference step is auditable. No black boxes in criminal investigation.</p>
+      <div class="oss-stats">
+        <div class="stat"><span class="stat-val">AGPL-3.0</span><span class="stat-label">License</span></div>
+        <div class="stat"><span class="stat-val">Python</span><span class="stat-label">Backend</span></div>
+        <div class="stat"><span class="stat-val">Vue 3</span><span class="stat-label">Frontend</span></div>
+        <div class="stat"><span class="stat-val">Docker</span><span class="stat-label">Deploy</span></div>
+      </div>
     </div>
   </section>
 
-  <!-- ── S10: CTA / FOOTER ───────────────────────────────────────────── -->
-  <section class="cta" id="cta">
-    <div class="section-inner section-center">
-      <h2 class="font-display cta-h2">Ready to deploy<br>the swarm?</h2>
-      <p class="cta-desc">CrimeScope is open source. Clone, configure, investigate.</p>
+  <!-- ═══ 10 CTA ═══════════════════════════════════════════════════════ -->
+  <section id="cta" class="section cta">
+    <div class="container">
+      <h2 class="cta-h2">Ready to deploy the swarm?</h2>
+      <p class="cta-sub">Clone the repo. Add your OpenRouter key. Launch 1,000 agents.</p>
       <div class="cta-btns">
-        <a href="https://github.com/SAICHARAN-TEJ/CRIMESCOPE" class="btn btn--primary">GitHub Repository →</a>
-        <a href="http://localhost:3000" class="btn">Launch Dashboard</a>
+        <a href="https://github.com/SAICHARAN-TEJ/CRIMESCOPE" class="btn-primary" target="_blank">View on GitHub →</a>
+        <a href="http://localhost:3000" class="btn-ghost">Open Dashboard</a>
       </div>
+      <pre class="cta-code"><code>git clone https://github.com/SAICHARAN-TEJ/CRIMESCOPE.git
+cd CRIMESCOPE
+cp .env.example .env  # add your OpenRouter API key
+docker compose up -d</code></pre>
     </div>
   </section>
 
-  <footer class="footer">
-    <div class="section-inner footer-inner">
-      <span class="font-mono footer-brand">CRIMESCOPE V1.2</span>
-      <span class="font-mono footer-copy">Multi-Agent Swarm Intelligence Engine</span>
+  <!-- ═══ FOOTER ═══════════════════════════════════════════════════════ -->
+  <footer>
+    <div class="container footer-inner">
+      <span class="footer-brand">CRIMESCOPE</span>
+      <span class="footer-copy">AGPL-3.0 · 2026 · Swarm Intelligence Engine</span>
     </div>
   </footer>
 

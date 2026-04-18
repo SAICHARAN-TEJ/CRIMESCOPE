@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Demo router — serves pre-built Harlow Street data for the frontend."""
 
 from fastapi import APIRouter

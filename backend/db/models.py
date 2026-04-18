@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Pydantic models for all Supabase tables."""
 
 from __future__ import annotations

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Graph router — knowledge-graph serialisation for the D3 frontend."""
 
 from fastapi import APIRouter

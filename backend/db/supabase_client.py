@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """
 Supabase client — resilient singleton for the entire backend.
 

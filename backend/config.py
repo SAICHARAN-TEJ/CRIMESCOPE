@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """
 CrimeScope — Centralised Settings (Pydantic v2)
 

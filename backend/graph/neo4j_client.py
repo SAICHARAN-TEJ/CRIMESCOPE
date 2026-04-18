@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """
 Async Neo4j client for the Crime Knowledge Graph.
 

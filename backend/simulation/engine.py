@@ -1,8 +1,10 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """
 SimulationEngine — runs the 30-round swarm simulation
 and streams progress to the frontend via Server-Sent Events.
 
-Implements a MiroFish-style state machine for resilient lifecycle tracking.
+Implements a state machine for resilient lifecycle tracking.
+Uses ProbableCauseEngine for Bayesian-weighted final report.
 """
 
 from __future__ import annotations
@@ -17,13 +19,14 @@ from typing import Any, AsyncGenerator, Dict, List, Optional
 
 from backend.agents.swarm_manager import SwarmManager
 from backend.config import settings
+from backend.engine.probable_cause import ProbableCauseEngine
 from backend.simulation.voting import cluster_hypotheses
 from backend.utils.logger import get_logger
 
 logger = get_logger("crimescope.simulation")
 
 
-# ── State Machine (adapted from MiroFish SimulationStatus) ───────────────
+# ── State Machine ─────────────────────────────────────────────────────────
 
 class SimulationStatus(str, Enum):
     CREATED = "created"
@@ -105,10 +108,22 @@ class SimulationEngine:
                 )
                 await asyncio.sleep(0.5)
 
-            # Phase 3 — report
+            # Phase 3 — report via Probable Cause Engine
             self.state.status = SimulationStatus.COMPLETE
             self.state.completed_at = time.time()
-            report = self._build_report()
+
+            engine = ProbableCauseEngine(self.case_id)
+            all_votes = self.swarm.get_all_votes()
+            pc_report = engine.generate(
+                all_votes,
+                consensus_facts=[
+                    "Vehicle entered garage at 06:42 PM.",
+                    "Handbag intentionally placed in bin on Level 1.",
+                    "22-minute CCTV blind spot from 06:58 to 07:20.",
+                ],
+                rounds_completed=self.rounds,
+            )
+            report = pc_report.model_dump()
             await self._persist_report(report)
 
             logger.info(f"[{self.case_id}] Simulation complete — {self.state.to_dict()}")
@@ -161,30 +176,11 @@ class SimulationEngine:
 
     # ── helpers ───────────────────────────────────────────────────────────
 
-    def _build_report(self) -> Dict[str, Any]:
-        top = self.hypotheses[0] if self.hypotheses else {}
-        return {
-            "case_id": self.case_id,
-            "title": "PROBABLE CAUSE REPORT",
-            "consensus": round(top.get("probability", 0) * 100),
-            "hypotheses": self.hypotheses,
-            "consensus_facts": [
-                "Vehicle entered garage at 06:42 PM.",
-                "Handbag intentionally placed in bin on Level 1.",
-                "22-minute CCTV blind spot from 06:58 to 07:20.",
-            ],
-            "dissent": (
-                f"{self.hypotheses[-1]['agent_count']} agents maintain alternative theory."
-                if self.hypotheses
-                else "No dissent recorded."
-            ),
-        }
-
     @staticmethod
     def _sample_feed(outputs: List[Dict[str, Any]], n: int = 5) -> List[str]:
         samples = random.sample(outputs, min(n, len(outputs)))
         return [
-            f"[{s['archetype']}] {s['agent_id']}: {str(s['output'])[:180]}"
+            f"[{s.get('archetype', '?')}] {s.get('agent_id', '?')}: voted {s.get('vote', {}).get('hypothesis_id', '?')} (conf: {s.get('vote', {}).get('confidence', 0):.2f})"
             for s in samples
         ]
 

@@ -1,7 +1,8 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """
 CrimeScope — Structured logging with dual console/file output.
 
-Adapted from MiroFish logger pattern: RotatingFileHandler for
+CrimeScope logger: RotatingFileHandler for
 persistent debug logs + clean console output for operations.
 
 Usage:

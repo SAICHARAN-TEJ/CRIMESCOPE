@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
 <template>
   <div class="sim-layout">
     <TopBar />
@@ -37,11 +38,19 @@
           </div>
         </div>
 
-        <!-- Agent feed -->
+        <!-- Agent feed with archetype colors -->
         <div class="sb-section feed-section">
           <h3 class="sb-title font-mono">AGENT FEED</h3>
           <div class="feed-scroll" ref="feedRef">
-            <div class="feed-item font-mono" v-for="(msg, i) in sim.feed" :key="i">{{ msg }}</div>
+            <div
+              class="feed-item font-mono"
+              v-for="(msg, i) in sim.feed"
+              :key="i"
+              :class="feedClass(msg)"
+            >
+              <span class="feed-archetype" v-if="getArchetype(msg)">{{ getArchetype(msg) }}</span>
+              {{ stripArchetype(msg) }}
+            </div>
             <div class="feed-empty font-mono" v-if="!sim.feed.length">Awaiting simulation data…</div>
           </div>
         </div>
@@ -61,7 +70,7 @@
           <div class="progress-bar">
             <div class="progress-fill" style="width: 5%; animation: pulse-bar 1.5s infinite;"></div>
           </div>
-          <span class="font-mono progress-label">Initialising agents…</span>
+          <span class="font-mono progress-label">Initialising 1,000 agents…</span>
         </div>
         <div class="sb-controls" v-else-if="sim.status === 'simulating'">
           <div class="progress-bar">
@@ -96,6 +105,37 @@ const caseId = computed(() => route.params.id)
 const errorMsg = ref('')
 
 let eventSource = null
+
+// ── Archetype → color mapping for feed ────────────────────────────────
+const ARCHETYPE_COLORS = {
+  'Forensic Analyst': 'fa',
+  'Behavioral Profiler': 'bp',
+  'Eyewitness Simulator': 'es',
+  'Suspect Persona': 'sp',
+  'Alibi Verifier': 'av',
+  'Crime Scene Reconstructor': 'cr',
+  'Statistical Baseline Agent': 'sb',
+  'Contradiction Detector': 'cd',
+}
+
+function getArchetype(msg) {
+  const match = msg.match(/^\[([^\]]+)\]/)
+  return match ? match[1] : ''
+}
+
+function stripArchetype(msg) {
+  return msg.replace(/^\[[^\]]+\]\s*/, '')
+}
+
+function feedClass(msg) {
+  const arch = getArchetype(msg)
+  for (const [name, cls] of Object.entries(ARCHETYPE_COLORS)) {
+    if (arch.toLowerCase().includes(name.toLowerCase().split(' ')[0])) return `feed--${cls}`
+  }
+  if (arch === 'INIT' || arch === 'DONE') return 'feed--system'
+  if (arch === 'ERROR') return 'feed--error'
+  return ''
+}
 
 onMounted(() => {
   graph.setGraph(
@@ -190,13 +230,32 @@ onUnmounted(() => {
 .hyp-agents { font-size: 10px; color: #999; }
 
 .feed-section { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
-.feed-scroll { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
+.feed-scroll { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
 .feed-item {
   font-size: 10px; color: #666; line-height: 1.5;
-  padding: 5px 0; border-bottom: 1px solid #F0F0F0;
+  padding: 5px 8px; border-radius: 4px;
   animation: fade-in 0.3s var(--ease) both;
 }
+.feed-archetype {
+  display: inline-block; font-size: 9px; font-weight: 700;
+  padding: 1px 5px; border-radius: 3px;
+  margin-right: 6px; text-transform: uppercase;
+}
 .feed-empty { font-size: 11px; color: #999; padding: 20px 0; text-align: center; }
+
+/* Archetype color classes */
+.feed--fa .feed-archetype { background: #FCE4EC; color: #C62828; }
+.feed--bp .feed-archetype { background: #E8EAF6; color: #283593; }
+.feed--es .feed-archetype { background: #E0F2F1; color: #00695C; }
+.feed--sp .feed-archetype { background: #FFF3E0; color: #E65100; }
+.feed--av .feed-archetype { background: #F3E5F5; color: #6A1B9A; }
+.feed--cr .feed-archetype { background: #E3F2FD; color: #1565C0; }
+.feed--sb .feed-archetype { background: #F1F8E9; color: #33691E; }
+.feed--cd .feed-archetype { background: #FBE9E7; color: #BF360C; }
+.feed--system { color: #E91E63; font-weight: 600; }
+.feed--system .feed-archetype { background: #E91E63; color: #FFF; }
+.feed--error { color: #C62828; background: #FFF1F1; }
+.feed--error .feed-archetype { background: #C62828; color: #FFF; }
 
 .sb-controls { padding: 14px; border-top: 1px solid #EAEAEA; }
 .sb-controls .btn { width: 100%; justify-content: center; }

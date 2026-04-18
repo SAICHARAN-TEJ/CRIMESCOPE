@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """
 SwarmManager — orchestrates all 1,000 agents.
 
@@ -10,8 +11,11 @@ from __future__ import annotations
 import asyncio
 from typing import Any, Dict, List
 
-from backend.agents.archetypes import ALL_ARCHETYPES
+from backend.agents.models import ARCHETYPES
 from backend.agents.base_agent import BaseAgent
+from backend.utils.logger import get_logger
+
+logger = get_logger("crimescope.swarm")
 
 
 class SwarmManager:
@@ -23,19 +27,24 @@ class SwarmManager:
 
     def _build(self) -> None:
         """Instantiate all 1,000 agents from archetype definitions."""
-        for Archetype in ALL_ARCHETYPES:
-            for i in range(Archetype.COUNT):
-                agent = Archetype(
-                    agent_id=f"{Archetype.ARCHETYPE}_{i:04d}",
+        for archetype in ARCHETYPES:
+            for i in range(archetype["count"]):
+                agent = BaseAgent(
+                    agent_id=f"{archetype['name'].lower().replace(' ', '_')}_{i:04d}",
+                    archetype=archetype["name"],
+                    role=archetype["role"],
                     case_id=self.case_id,
                 )
                 self.agents.append(agent)
+        logger.info(f"SwarmManager: built {len(self.agents)} agents for case {self.case_id}")
+        assert len(self.agents) == 1000, f"Expected 1000 agents, got {len(self.agents)}"
 
     async def initialise_all(self, batch_size: int = 50) -> None:
         """Batch-initialise every agent with the seed packet."""
         for start in range(0, len(self.agents), batch_size):
             batch = self.agents[start : start + batch_size]
             await asyncio.gather(*(a.initialise(self.seed_packet) for a in batch))
+            logger.info(f"Initialised agents {start}–{start + len(batch)}")
 
     async def run_round(
         self,
@@ -48,7 +57,20 @@ class SwarmManager:
         results: List[Dict[str, Any]] = []
         for start in range(0, len(self.agents), batch_size):
             batch = self.agents[start : start + batch_size]
-            results += await asyncio.gather(
+            batch_results = await asyncio.gather(
                 *(a.run_round(round_num, hypotheses, evidence) for a in batch)
             )
+            results.extend(batch_results)
         return results
+
+    def get_all_votes(self) -> List[Dict[str, Any]]:
+        """Collect current votes from all agents."""
+        return [
+            {
+                "agent_id": a.model.agent_id,
+                "archetype": a.model.archetype,
+                "vote": a.model.current_vote.model_dump(),
+                "alignment_score": a.model.evidence_alignment_score,
+            }
+            for a in self.agents
+        ]

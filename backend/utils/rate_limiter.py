@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Token-bucket rate limiter for OpenRouter free-tier compliance."""
 
 from __future__ import annotations

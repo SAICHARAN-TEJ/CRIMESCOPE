@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Upload router — evidence ingestion via Mode 1 (photos) and Mode 2 (docs)."""
 
 from typing import List

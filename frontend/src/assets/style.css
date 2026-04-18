@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════════════════════════════════
-   CrimeScope — Global Design System (MiroFish-Inspired Light Theme)
+   CrimeScope — Global Design System (Light Theme)
    Palette: White / Light-Gray / Crimson Accents
    ══════════════════════════════════════════════════════════════════════ */
 
@@ -16,7 +16,7 @@
   --c-border:      #EAEAEA;
   --c-border-hi:   #C0C0C0;
 
-  /* entity colors (warm, saturated — MiroFish palette) */
+  /* entity colors (warm, saturated palette) */
   --c-person:      #E91E63;
   --c-location:    #1A936F;
   --c-evidence:    #004E89;

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """
 CrimeScope API — FastAPI application entry point.
 
