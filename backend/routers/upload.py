@@ -49,7 +49,7 @@ async def upload_images(
 @router.post("/upload/documents")
 async def upload_documents(
     question: str = Form(...),
-    docs: List[UploadFile] = File(...),
+    docs: List[UploadFile] = File(default=[]),
     videos: List[UploadFile] = File(default=[]),
 ):
     """Mode 2: Upload documents and videos for 3-pass extraction."""

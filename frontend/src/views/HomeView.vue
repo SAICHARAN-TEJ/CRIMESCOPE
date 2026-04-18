@@ -1,4 +1,3 @@
-<!-- SPDX-License-Identifier: AGPL-3.0-only -->
 <template>
   <div class="home">
     <header class="home-header">
@@ -31,13 +30,15 @@
               <span>Up to 6 images</span>
               <span>Gemini 2.5 Pro</span>
             </div>
-            <label class="file-upload">
+            <label class="file-upload" :class="{ 'has-files': photoFiles.length }">
               <input type="file" multiple accept="image/*" @change="onPhotos" />
-              <span>Choose Files</span>
+              <span v-if="!photoFiles.length">📎 Click to choose images...</span>
+              <span v-else class="file-selected">✓ {{ photoFiles.length }} image{{ photoFiles.length > 1 ? 's' : '' }} selected</span>
             </label>
             <input v-model="photoDesc" class="mode-input" placeholder="Describe the scene context..." />
-            <button class="mode-btn" :disabled="!photoFiles.length || !photoDesc" @click="submitPhotos">
-              Analyse Photos →
+            <button class="mode-btn" :disabled="!photoFiles.length || !photoDesc || photoLoading" @click="submitPhotos">
+              <span v-if="photoLoading">⏳ Analysing...</span>
+              <span v-else>Analyse Photos →</span>
             </button>
           </div>
 
@@ -50,13 +51,15 @@
               <span>PDF / DOCX / TXT</span>
               <span>3-pass pipeline</span>
             </div>
-            <label class="file-upload">
-              <input type="file" multiple accept=".pdf,.docx,.txt,.mp4,.mov" @change="onDocs" />
-              <span>Choose Files</span>
+            <label class="file-upload" :class="{ 'has-files': docFiles.length }">
+              <input type="file" multiple accept=".pdf,.docx,.txt,.doc,.mp4,.mov,.avi" @change="onDocs" />
+              <span v-if="!docFiles.length">📎 Click to choose documents...</span>
+              <span v-else class="file-selected">✓ {{ docFiles.length }} file{{ docFiles.length > 1 ? 's' : '' }} selected ({{ docFileNames }})</span>
             </label>
             <input v-model="docQuestion" class="mode-input" placeholder="What happened? Guiding question..." />
-            <button class="mode-btn" :disabled="!docFiles.length || !docQuestion" @click="submitDocs">
-              Analyse Documents →
+            <button class="mode-btn" :disabled="!docFiles.length || !docQuestion || docLoading" @click="submitDocs">
+              <span v-if="docLoading">⏳ Processing {{ docFiles.length }} file{{ docFiles.length > 1 ? 's' : '' }}...</span>
+              <span v-else>Analyse Documents →</span>
             </button>
           </div>
 
@@ -92,7 +95,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '@/api/client'
 import ThemeToggle from '@/components/ui/ThemeToggle.vue'
@@ -109,27 +112,39 @@ const metrics = [
 // Mode 1 state
 const photoFiles = ref([])
 const photoDesc = ref('')
+const photoLoading = ref(false)
 const onPhotos = (e) => { photoFiles.value = Array.from(e.target.files) }
 
 // Mode 2 state
 const docFiles = ref([])
 const docQuestion = ref('')
+const docLoading = ref(false)
 const onDocs = (e) => { docFiles.value = Array.from(e.target.files) }
+const docFileNames = computed(() =>
+  docFiles.value.map(f => f.name).slice(0, 3).join(', ') + (docFiles.value.length > 3 ? '...' : '')
+)
 
 async function submitPhotos() {
+  photoLoading.value = true
   const form = new FormData()
   form.append('description', photoDesc.value)
   photoFiles.value.forEach(f => form.append('files', f))
   try {
-    const res = await api.post('/upload/images', form, { headers: { 'Content-Type': 'multipart/form-data' } })
+    const res = await api.post('/upload/images', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 120000,
+    })
     const caseId = res.data?.id || res.data?.case_id || 'new-case'
     router.push(`/simulate/${caseId}`)
   } catch (e) {
     alert('Upload failed: ' + (e.response?.data?.detail || e.message))
+  } finally {
+    photoLoading.value = false
   }
 }
 
 async function submitDocs() {
+  docLoading.value = true
   const form = new FormData()
   form.append('question', docQuestion.value)
   docFiles.value.forEach(f => {
@@ -137,11 +152,16 @@ async function submitDocs() {
     else form.append('docs', f)
   })
   try {
-    const res = await api.post('/upload/documents', form, { headers: { 'Content-Type': 'multipart/form-data' } })
+    const res = await api.post('/upload/documents', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 120000,
+    })
     const caseId = res.data?.id || res.data?.case_id || 'new-case'
     router.push(`/simulate/${caseId}`)
   } catch (e) {
     alert('Upload failed: ' + (e.response?.data?.detail || e.message))
+  } finally {
+    docLoading.value = false
   }
 }
 </script>
@@ -212,6 +232,8 @@ async function submitDocs() {
   transition: all 0.2s;
 }
 .file-upload:hover span { border-color: var(--c-red); color: var(--c-red); }
+.file-upload.has-files span { border-color: #22c55e; border-style: solid; color: #22c55e; }
+.file-selected { font-weight: 600; }
 
 .mode-input {
   width: 100%; padding: 10px 14px; border: 1px solid var(--c-border);
