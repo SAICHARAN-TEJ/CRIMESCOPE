@@ -41,10 +41,27 @@ class MemoryClient:
                 logger.error(f"ChromaDB completely unavailable: {e2}")
                 self._client = None
 
+    @staticmethod
+    def _sanitize_name(namespace: str) -> str:
+        """Sanitize a namespace into a valid ChromaDB collection name.
+
+        ChromaDB requires: 3-512 chars, only [a-zA-Z0-9._-],
+        starting and ending with [a-zA-Z0-9].
+        """
+        import re
+        name = re.sub(r"[^a-zA-Z0-9._-]", "_", namespace)
+        # Strip leading/trailing non-alphanumeric
+        name = name.strip("._-")
+        # Ensure minimum length
+        if len(name) < 3:
+            name = name + "_cs"
+        return name[:512]
+
     def _collection(self, namespace: str):
         if self._client is None:
             return None
-        return self._client.get_or_create_collection(name=namespace)
+        safe = self._sanitize_name(namespace)
+        return self._client.get_or_create_collection(name=safe)
 
     def add(self, namespace: str, text: str, metadata: Dict[str, Any] | None = None) -> None:
         """Store a memory fragment."""

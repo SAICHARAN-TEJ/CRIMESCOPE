@@ -20,6 +20,7 @@ out/
 # Runtime-generated backend data
 backend/uploads/*
 !backend/uploads/.gitkeep
+data/
 
 # Logs and local editor files
 *.log

@@ -96,25 +96,38 @@ class BaseAgent:
     # ── Initialise ────────────────────────────────────────────────────
 
     async def initialise(self, seed_packet: Dict[str, Any]) -> Dict[str, Any]:
-        """Run the init prompt to generate the agent's first causal chain."""
-        import json
+        """Initialise agent state deterministically from the seed packet.
 
-        prompt = INIT_PROMPT.format(
-            agent_id=self.model.agent_id,
-            archetype=self.model.archetype,
-            bias=self.model.persona_description,
-            seed_json=json.dumps(seed_packet, indent=2)[:3000],
-        )
+        We skip an LLM call here: 1,000 individual API requests before round 1
+        exhausts any free-tier rate limit and adds no meaningful diversity since
+        every agent has the same seed at t=0. Instead we assign archetype-weighted
+        hypothesis priors and let actual LLM divergence happen during run_round().
+        """
+        import hashlib
 
-        model_name = await model_router.next_model()
-        raw = await openrouter.chat(model_name, prompt, system="You are a CrimeScope forensic agent.")
+        h_options = ["H-001", "H-002", "H-003", "H-004", "H-005"]
+        digest = int(hashlib.md5(self.model.agent_id.encode()).hexdigest(), 16)
+        hyp_id = h_options[digest % len(h_options)]
 
-        parsed = ModelRouter.parse_json_safe(raw)
-        if parsed:
-            self._apply_response(parsed)
-            mem0_client.add(self.model.episodic_memory_ns, raw[:2000])
+        confidence_map = {
+            "Forensic Analyst": 0.75,
+            "Behavioral Profiler": 0.65,
+            "Eyewitness Simulator": 0.55,
+            "Suspect Persona": 0.50,
+            "Alibi Verifier": 0.70,
+            "Crime Scene Reconstructor": 0.72,
+            "Statistical Baseline Agent": 0.60,
+            "Contradiction Detector": 0.68,
+        }
+        confidence = confidence_map.get(self.model.archetype, 0.60)
+        confidence = min(0.99, max(0.30, confidence + (digest % 20 - 10) / 100))
 
+        self.model.current_vote = AgentVote(hypothesis_id=hyp_id, confidence=confidence)
+        self.model.current_causal_chain = [
+            CausalStep(step=1, event="Initial prior — awaiting round 1 evidence", certainty=0.5)
+        ]
         self._initialised = True
+
         return {
             "agent_id": self.model.agent_id,
             "archetype": self.model.archetype,
@@ -170,19 +183,25 @@ class BaseAgent:
 
     def _apply_response(self, parsed: Dict[str, Any]) -> None:
         """Apply a parsed JSON response to the agent's internal state."""
-        hyp_id = parsed.get("hypothesis_id", "H-001")
-        confidence = float(parsed.get("confidence", 0.5))
+        hyp_id = parsed.get("hypothesis_id") or "H-001"
+        if not isinstance(hyp_id, str) or not hyp_id.strip():
+            hyp_id = "H-001"
+        confidence = float(parsed.get("confidence") or 0.5)
+        confidence = min(0.99, max(0.01, confidence))
         self.model.current_vote = AgentVote(hypothesis_id=hyp_id, confidence=confidence)
 
-        chain = parsed.get("causal_chain", [])
+        chain = parsed.get("causal_chain") or []
         self.model.current_causal_chain = [
             CausalStep(
                 step=s.get("step", i + 1),
-                event=s.get("event", "Unknown"),
-                certainty=float(s.get("certainty", 0.5)),
+                event=s.get("event") or "Unknown event",
+                certainty=min(1.0, max(0.0, float(s.get("certainty") or 0.5))),
             )
             for i, s in enumerate(chain)
+            if isinstance(s, dict)
         ]
 
         # Update alignment score based on confidence convergence
-        self.model.evidence_alignment_score = min(1.0, self.model.evidence_alignment_score + confidence * 0.1)
+        self.model.evidence_alignment_score = min(
+            1.0, self.model.evidence_alignment_score + confidence * 0.1
+        )
