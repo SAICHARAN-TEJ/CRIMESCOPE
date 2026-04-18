@@ -3,6 +3,7 @@
 
 from fastapi import APIRouter
 
+from backend.db.memory_store import store
 from backend.db.supabase_client import get_supabase
 from backend.demo.harlow_case import HARLOW_NODES, HARLOW_EDGES
 
@@ -13,14 +14,23 @@ router = APIRouter()
 async def get_graph(case_id: str, round: int | None = None):
     """
     Return graph data for the D3 visualiser.
-    If round is specified, fetch the snapshot from Supabase.
-    If 'demo', return the pre-built Harlow dataset.
-    Otherwise, query Neo4j live.
+    Priority:
+      1. Demo (harlow-001): pre-built dataset
+      2. round-specific snapshot from Supabase or memory store
+      3. Live graph from unified graph client (Neo4j or in-memory)
     """
     if case_id == "harlow-001":
         return {"nodes": HARLOW_NODES, "edges": HARLOW_EDGES}
 
+    # Round-specific snapshot
     if round is not None:
+        # Try in-memory snapshots first
+        snapshots = store._graph_snapshots.get(case_id, [])
+        for snap in snapshots:
+            if snap.get("round_number") == round:
+                return snap
+
+        # Try Supabase
         client = get_supabase()
         if client:
             try:
@@ -36,6 +46,7 @@ async def get_graph(case_id: str, round: int | None = None):
             except Exception:
                 pass
 
+    # Live graph from the unified graph client (works without Neo4j)
     try:
         from backend.graph.neo4j_client import neo4j_client
         return await neo4j_client.get_graph(case_id)

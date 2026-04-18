@@ -4,15 +4,43 @@
 from fastapi import APIRouter
 from pydantic import BaseModel
 
+from backend.db.memory_store import store
 from backend.demo.harlow_case import HARLOW_SEED
 from backend.utils.openrouter import openrouter
 from backend.config import settings
+from backend.utils.logger import get_logger
 
 router = APIRouter()
+logger = get_logger("crimescope.chat")
 
 
 class ChatRequest(BaseModel):
     question: str
+
+
+def _get_case_context(case_id: str) -> str:
+    """Load case context from memory store, Supabase, or demo fallback."""
+    # Try in-memory store first
+    seed = store.get_seed_packet(case_id)
+    if seed:
+        return str(seed)
+
+    # Try Supabase
+    from backend.db.supabase_client import get_supabase
+    client = get_supabase()
+    if client:
+        try:
+            res = client.table("cases").select("seed_packet").eq("id", case_id).execute()
+            if res.data:
+                return str(res.data[0]["seed_packet"])
+        except Exception:
+            pass
+
+    # Demo fallback
+    if case_id == "harlow-001":
+        return str(HARLOW_SEED)
+
+    return "No case data available. Please upload evidence first."
 
 
 # ── Case-level chat ──────────────────────────────────────────────────────
@@ -23,7 +51,7 @@ async def chat(case_id: str, body: ChatRequest):
     Simple RAG-lite chat — feeds the question + case context
     through the reasoning model for a grounded answer.
     """
-    context = str(HARLOW_SEED)
+    context = _get_case_context(case_id)
 
     answer = await openrouter.chat(
         settings.reasoning_model_name,
@@ -44,7 +72,6 @@ async def report_chat(case_id: str, body: ChatRequest):
     ReportAgent chat — answers questions about the final Probable Cause
     Report with full context of hypotheses and dissent.
     """
-    # TODO: Load actual report from DB in production
     from backend.routers.report import get_report
     try:
         report = await get_report(case_id)

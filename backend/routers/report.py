@@ -4,6 +4,7 @@
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
 
+from backend.db.memory_store import store
 from backend.db.supabase_client import get_supabase
 from backend.demo.harlow_case import HARLOW_SEED
 
@@ -132,8 +133,13 @@ DEMO_REPORT = {
 
 @router.get("/report/{case_id}")
 async def get_report(case_id: str):
-    client = get_supabase()
+    # Try in-memory store first (real-time reports from simulations)
+    mem_report = store.get_report(case_id)
+    if mem_report:
+        return mem_report
 
+    # Try Supabase
+    client = get_supabase()
     if client:
         try:
             res = client.table("reports").select("*").eq("case_id", case_id).execute()

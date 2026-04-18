@@ -2,8 +2,8 @@
 """
 Mode 1 — Vision pipeline: analyse crime scene photographs.
 
-Uses the vision model (Gemini 2.5 Pro) to extract forensic observations
-from each image, then merges into a UnifiedSeedPacket.
+Uses the vision model to extract forensic observations
+from each image via multimodal API, then merges into a UnifiedSeedPacket.
 """
 
 from __future__ import annotations
@@ -80,16 +80,29 @@ async def analyse_images(
     images = image_bytes_list[: settings.max_images_mode1]
     observations: List[ForensicObservation] = []
 
-    # Step 1: Per-image forensic analysis
+    # Step 1: Per-image forensic analysis using MULTIMODAL vision API
     for idx, img_bytes in enumerate(images):
         b64 = base64.b64encode(img_bytes).decode("utf-8")
         prompt = VISION_USER_TEMPLATE.format(description=description, idx=idx)
 
-        raw = await openrouter.chat(
-            settings.vision_model_name,
-            prompt,
-            system=VISION_SYSTEM,
-        )
+        # FIX: Use openrouter.vision() to actually send the image to the API
+        # Previously used openrouter.chat() which is text-only — images were
+        # base64-encoded but never sent (dead variable bug).
+        try:
+            raw = await openrouter.vision(
+                settings.vision_model_name,
+                [b64],
+                VISION_SYSTEM + "\n\n" + prompt,
+            )
+        except Exception as e:
+            # Fallback: try text-only chat if vision model doesn't support multimodal
+            logger.warning(f"Vision API failed for image {idx}, falling back to text: {e}")
+            raw = await openrouter.chat(
+                settings.vision_model_name,
+                f"[Image {idx} could not be processed visually. "
+                f"Context: {description}. Provide a generic forensic observation template.]",
+                system=VISION_SYSTEM,
+            )
 
         parsed = ModelRouter.parse_json_safe(raw)
         if parsed:

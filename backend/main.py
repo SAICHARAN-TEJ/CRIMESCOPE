@@ -41,10 +41,13 @@ async def lifespan(app: FastAPI):
     try:
         from backend.graph.neo4j_client import neo4j_client
         await neo4j_client.connect()
-        neo4j_ok = True
-        logger.info("  ✓ Neo4j connected")
+        neo4j_ok = neo4j_client.is_connected
+        if neo4j_ok:
+            logger.info("  ✓ Neo4j connected (server mode)")
+        else:
+            logger.info("  ✓ Graph store active (in-memory mode — Neo4j not required)")
     except Exception as e:
-        logger.warning(f"  ⚠ Neo4j unavailable: {e} — graph queries will use demo data")
+        logger.warning(f"  ⚠ Graph init failed: {e} — graph queries will use demo data")
 
     logger.info("=" * 50)
 

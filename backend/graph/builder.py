@@ -2,9 +2,12 @@
 """
 GraphBuilder — LLM-assisted knowledge graph construction.
 
-Extends the Neo4j client with MERGE-based upserts, certainty properties,
+Extends the graph client with MERGE-based upserts, certainty properties,
 and an LLM extraction step to convert natural language evidence into
 structured graph triples.
+
+Resilient: works without Neo4j by storing triples in the in-memory
+graph inside neo4j_client.
 """
 
 from __future__ import annotations
@@ -13,7 +16,7 @@ import json
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
 
-from backend.graph.neo4j_client import get_neo4j_driver
+from backend.graph.neo4j_client import neo4j_client
 from backend.llm import ModelRouter
 from backend.utils.openrouter import openrouter
 from backend.config import settings
@@ -40,26 +43,59 @@ class GraphStorage(ABC):
     def cleanup(self, case_id: str) -> None: ...
 
 
-class CrimeScopeNeo4jStorage(GraphStorage):
-    """Neo4j-backed GraphStorage with MERGE and certainty tracking."""
+class CrimeScopeGraphStorage(GraphStorage):
+    """Graph storage that delegates to the unified neo4j_client.
+    Works in both Neo4j-connected and in-memory-only modes."""
 
     def upsert_node(self, node_id: str, labels: List[str], props: Dict[str, Any]) -> None:
-        driver = get_neo4j_driver()
-        if not driver:
-            return
+        case_id = props.get("case_id", "unknown")
+        name = props.get("name", node_id)
+        neo4j_client._mem.add_node(case_id, name, labels, {**props, "id": node_id})
+
+        # If Neo4j is connected, also write there (sync via run_in_executor not
+        # ideal but acceptable for builder's batch-insert path).
+        if neo4j_client.is_connected and neo4j_client._driver:
+            try:
+                import asyncio
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    # Already in an async context — schedule as a task
+                    asyncio.ensure_future(self._neo4j_upsert_node(node_id, labels, props))
+                else:
+                    loop.run_until_complete(self._neo4j_upsert_node(node_id, labels, props))
+            except Exception as e:
+                logger.debug(f"Neo4j upsert_node fallback: {e}")
+
+    async def _neo4j_upsert_node(
+        self, node_id: str, labels: List[str], props: Dict[str, Any]
+    ) -> None:
         label_str = ":".join(labels) if labels else "Entity"
-        with driver.session() as session:
-            session.run(
+        async with neo4j_client._driver.session() as session:
+            await session.run(
                 f"MERGE (n:{label_str} {{id: $id}}) SET n += $props",
                 id=node_id, props=props,
             )
 
     def upsert_edge(self, src: str, tgt: str, rel_type: str, props: Dict[str, Any]) -> None:
-        driver = get_neo4j_driver()
-        if not driver:
-            return
-        with driver.session() as session:
-            session.run(
+        case_id = props.get("case_id", "unknown")
+        neo4j_client._mem.add_edge(case_id, src, tgt, rel_type, props)
+
+        if neo4j_client.is_connected and neo4j_client._driver:
+            try:
+                import asyncio
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    asyncio.ensure_future(self._neo4j_upsert_edge(src, tgt, rel_type, props))
+                else:
+                    loop.run_until_complete(self._neo4j_upsert_edge(src, tgt, rel_type, props))
+            except Exception as e:
+                logger.debug(f"Neo4j upsert_edge fallback: {e}")
+
+    async def _neo4j_upsert_edge(
+        self, src: str, tgt: str, rel_type: str, props: Dict[str, Any]
+    ) -> None:
+        async with neo4j_client._driver.session() as session:
+            await session.run(
                 f"""
                 MATCH (a {{id: $src}}), (b {{id: $tgt}})
                 MERGE (a)-[r:{rel_type}]->(b)
@@ -69,24 +105,10 @@ class CrimeScopeNeo4jStorage(GraphStorage):
             )
 
     def get_graph_summary(self, case_id: str) -> Dict[str, Any]:
-        driver = get_neo4j_driver()
-        if not driver:
-            return {"nodes": 0, "edges": 0}
-        with driver.session() as session:
-            nodes = session.run(
-                "MATCH (n {case_id: $cid}) RETURN count(n) AS cnt", cid=case_id
-            ).single()["cnt"]
-            edges = session.run(
-                "MATCH ({case_id: $cid})-[r]-() RETURN count(r) AS cnt", cid=case_id
-            ).single()["cnt"]
-        return {"nodes": nodes, "edges": edges}
+        return neo4j_client._mem.summary(case_id)
 
     def cleanup(self, case_id: str) -> None:
-        driver = get_neo4j_driver()
-        if not driver:
-            return
-        with driver.session() as session:
-            session.run("MATCH (n {case_id: $cid}) DETACH DELETE n", cid=case_id)
+        neo4j_client._mem.clear(case_id)
         logger.info(f"Graph cleanup complete for case {case_id}")
 
 
@@ -109,14 +131,14 @@ Return JSON array of triples:
 
 
 class GraphBuilder:
-    """Orchestrates LLM extraction → Neo4j storage."""
+    """Orchestrates LLM extraction → graph storage."""
 
     def __init__(self, case_id: str) -> None:
         self.case_id = case_id
-        self.storage = CrimeScopeNeo4jStorage()
+        self.storage = CrimeScopeGraphStorage()
 
     async def build_from_text(self, text: str) -> int:
-        """Extract triples from text via LLM and store in Neo4j."""
+        """Extract triples from text via LLM and store in graph."""
         prompt = EXTRACT_TRIPLES_PROMPT.format(text=text[:4000])
         raw = await openrouter.chat(
             settings.fast_model_name,

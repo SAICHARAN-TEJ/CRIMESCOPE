@@ -6,6 +6,7 @@ and streams progress to the frontend via Server-Sent Events.
 Implements a state machine for resilient lifecycle tracking.
 Uses ProbableCauseEngine for Bayesian-weighted final report.
 """
+# NOTE: memory_store imported inside methods to avoid circular imports
 
 from __future__ import annotations
 
@@ -86,6 +87,15 @@ class SimulationEngine:
             yield self._sse("status", self.state.to_dict())
             await self.swarm.initialise_all()
 
+            # Build the knowledge graph from the seed packet (works without Neo4j)
+            if not self.demo_mode:
+                try:
+                    from backend.graph.neo4j_client import neo4j_client
+                    await neo4j_client.build_from_seed(self.case_id, self.seed)
+                    logger.info(f"[{self.case_id}] Knowledge graph seeded: {await neo4j_client.get_summary(self.case_id)}")
+                except Exception as e:
+                    logger.warning(f"[{self.case_id}] Graph seeding skipped: {e}")
+
             # Phase 2 — simulate
             self.state.status = SimulationStatus.SIMULATING
             for r in range(1, self.rounds + 1):
@@ -125,17 +135,34 @@ class SimulationEngine:
 
             engine = ProbableCauseEngine(self.case_id)
             all_votes = self.swarm.get_all_votes()
+
+            # Extract consensus facts from the actual seed packet
+            seed_facts = self.seed.get("facts", [])
+            if not seed_facts:
+                # Fallback: build facts from seed entities and timeline
+                seed_facts = []
+                for e in self.seed.get("entities", [])[:5]:
+                    if isinstance(e, dict):
+                        seed_facts.append(f"{e.get('name', '?')}: {e.get('description', 'identified')}")
+                ts = self.seed.get("timeline", {})
+                if isinstance(ts, dict):
+                    for t in ts.get("key_timestamps", [])[:5]:
+                        if isinstance(t, dict):
+                            seed_facts.append(f"{t.get('time', '?')}: {t.get('event', '?')}")
+                if not seed_facts:
+                    seed_facts = [self.seed.get("evidence_summary", "Evidence analysed by swarm.")[:200]]
+
             pc_report = engine.generate(
                 all_votes,
-                consensus_facts=[
-                    "Vehicle entered garage at 06:42 PM.",
-                    "Handbag intentionally placed in bin on Level 1.",
-                    "22-minute CCTV blind spot from 06:58 to 07:20.",
-                ],
+                consensus_facts=seed_facts[:10],
                 rounds_completed=self.rounds,
             )
             report = pc_report.model_dump()
             await self._persist_report(report)
+
+            # Also save to in-memory store for the report endpoint
+            from backend.db.memory_store import store
+            store.save_report(self.case_id, report)
 
             logger.info(f"[{self.case_id}] Simulation complete — {self.state.to_dict()}")
             yield self._sse("complete", report)
@@ -149,7 +176,7 @@ class SimulationEngine:
     # ── Graph access (resilient) ─────────────────────────────────────────
 
     async def _get_graph_safe(self) -> Dict[str, Any]:
-        """Fetch graph from Neo4j or return empty fallback."""
+        """Fetch graph from unified graph client (Neo4j or in-memory)."""
         try:
             from backend.graph.neo4j_client import neo4j_client
             return await neo4j_client.get_graph(self.case_id)
@@ -159,6 +186,11 @@ class SimulationEngine:
     # ── Persistence (resilient) ──────────────────────────────────────────
 
     async def _persist_snapshot(self, round_num: int, graph: Dict[str, Any]) -> None:
+        # Always save to in-memory store (works offline)
+        from backend.db.memory_store import store
+        store.save_graph_snapshot(self.case_id, round_num, graph)
+
+        # Also try Supabase if available
         try:
             from backend.db.supabase_client import get_supabase
             client = get_supabase()
@@ -172,7 +204,7 @@ class SimulationEngine:
                     }
                 ).execute()
         except Exception:
-            pass  # Non-critical — demo mode
+            pass  # Non-critical
 
     async def _persist_report(self, report: Dict[str, Any]) -> None:
         try:
