@@ -98,9 +98,12 @@ class SimulationEngine:
                 )
                 self.hypotheses = cluster_hypotheses(outputs)
 
-                # Persist snapshot to Supabase (optional)
-                graph = await self._get_graph_safe()
-                await self._persist_snapshot(r, graph)
+                # Demo mode: skip all network I/O — use pre-built graph
+                if self.demo_mode:
+                    graph = self._harlow_demo_graph()
+                else:
+                    graph = await self._get_graph_safe()
+                    await self._persist_snapshot(r, graph)
 
                 yield self._sse(
                     "round",
@@ -112,8 +115,9 @@ class SimulationEngine:
                         "graph": graph,
                     },
                 )
-                # Demo mode: fast ticks; live mode: small back-pressure
-                await asyncio.sleep(0.1 if self.demo_mode else 0.5)
+                # Demo: no sleep — 30 rounds should complete in <3 s total
+                if not self.demo_mode:
+                    await asyncio.sleep(0.5)
 
             # Phase 3 — report via Probable Cause Engine
             self.state.status = SimulationStatus.COMPLETE
@@ -190,6 +194,31 @@ class SimulationEngine:
             f"[{s.get('archetype', '?')}] {s.get('agent_id', '?')}: voted {s.get('vote', {}).get('hypothesis_id', '?')} (conf: {s.get('vote', {}).get('confidence', 0):.2f})"
             for s in samples
         ]
+
+    @staticmethod
+    def _harlow_demo_graph() -> Dict[str, Any]:
+        """Pre-built Harlow Street knowledge graph — no Neo4j call needed."""
+        return {
+            "nodes": [
+                {"id": "Margaret_Voss",    "label": "Margaret Voss",    "type": "Person",   "certainty": 0.95},
+                {"id": "Victor_Crane",     "label": "Victor Crane",     "type": "Person",   "certainty": 0.88},
+                {"id": "Harlow_Garage",    "label": "Harlow Garage",    "type": "Location", "certainty": 1.0},
+                {"id": "Handbag",          "label": "Handbag",          "type": "Evidence", "certainty": 0.97},
+                {"id": "CCTV_Blind_Spot",  "label": "CCTV Blind Spot",  "type": "Event",    "certainty": 1.0},
+                {"id": "Level_1_Bin",      "label": "Level 1 Bin",      "type": "Location", "certainty": 0.94},
+                {"id": "Staff_Stairwell",  "label": "Staff Stairwell",  "type": "Location", "certainty": 0.82},
+                {"id": "Unknown_Vehicle",  "label": "Unknown Vehicle",  "type": "Evidence", "certainty": 0.76},
+            ],
+            "edges": [
+                {"source": "Margaret_Voss",   "target": "Harlow_Garage",   "label": "arrived_at",    "certainty": 0.95},
+                {"source": "Victor_Crane",    "target": "Staff_Stairwell", "label": "accessed",      "certainty": 0.82},
+                {"source": "Victor_Crane",    "target": "Level_1_Bin",     "label": "placed_item",   "certainty": 0.88},
+                {"source": "Handbag",         "target": "Level_1_Bin",     "label": "found_in",      "certainty": 0.94},
+                {"source": "CCTV_Blind_Spot", "target": "Handbag",         "label": "concealed",     "certainty": 0.97},
+                {"source": "Unknown_Vehicle", "target": "Harlow_Garage",   "label": "observed_near", "certainty": 0.76},
+                {"source": "Victor_Crane",    "target": "Margaret_Voss",   "label": "targeted",      "certainty": 0.84},
+            ],
+        }
 
     @staticmethod
     def _sse(event: str, data: Any) -> str:
