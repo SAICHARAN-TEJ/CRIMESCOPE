@@ -50,12 +50,14 @@ def _chunk_text(text: str, max_tokens: int = 1500, overlap: int = 200) -> list[s
     words = text.split()
     if len(words) <= max_tokens:
         return [text] if text.strip() else []
+    # Ensure step is always at least 1 to prevent infinite loop (CRIM-007)
+    step = max(1, max_tokens - overlap)
     chunks = []
     i = 0
     while i < len(words):
         chunk = " ".join(words[i : i + max_tokens])
         chunks.append(chunk)
-        i += max_tokens - overlap
+        i += step
     return chunks
 
 
