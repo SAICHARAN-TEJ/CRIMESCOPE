@@ -1,23 +1,28 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 """
-Upload router — evidence ingestion with parallel agent pipeline.
+Upload router v3.0 — evidence ingestion with parallel agent pipeline.
 
 Mode 1: Crime scene photographs → vision analysis
 Mode 2: Documents + videos → 3-pass extraction + audio transcription
 Mode 3: Full pipeline → supervisor dispatches all agents in parallel
 
 After ingestion, the supervisor runs:
-  1. Ingestion Agent (sequential) → clean/normalise raw text
-  2. Entity Extraction + Evidence Correlation + Legal Reasoning (parallel)
-  3. Graph construction from extracted entities
+  Phase 1: Ingestion Agent (sequential) → clean/normalise raw text
+  Phase 2: 5 agents IN PARALLEL (entity + correlation + legal + timeline + contradiction)
+  Phase 3: Synthesis Agent → final Probable Cause Report
+
+All heavy processing runs in BackgroundTasks. Returns immediately with
+case_id + SSE stream URL for real-time progress.
 """
 
 from __future__ import annotations
 
+import asyncio
 import time
+from functools import partial
 from typing import List
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, UploadFile
 
 from backend.db.memory_store import store
 from backend.db.supabase_client import get_supabase
@@ -52,6 +57,7 @@ async def upload_images(
 
 @router.post("/upload/documents")
 async def upload_documents(
+    background_tasks: BackgroundTasks,
     question: str = Form(...),
     docs: List[UploadFile] = File(default=[]),
     videos: List[UploadFile] = File(default=[]),
@@ -64,8 +70,9 @@ async def upload_documents(
     seed = await analyse_documents(doc_bytes, vid_bytes, question)
 
     case = await _persist_case(question[:80], 2, seed)
+    case_id = case.get("id", "")
     elapsed = round(time.time() - start, 2)
-    logger.info(f"Mode 2 complete in {elapsed}s — case {case.get('id', '?')}")
+    logger.info(f"Mode 2 complete in {elapsed}s — case {case_id}")
 
     # Extract raw texts for supervisor pipeline
     raw_texts = []
@@ -75,12 +82,14 @@ async def upload_documents(
         except Exception:
             raw_texts.append(str(doc_b[:2000]))
 
-    # Process video audio transcripts
+    # Process video audio + keyframes
     video_transcripts = []
+    ocr_texts: List[str] = []
+    video_filenames = [v.filename for v in videos]
     for i, vb in enumerate(vid_bytes):
         try:
             from backend.pipeline.audio import process_video_audio
-            ext = videos[i].filename.rsplit(".", 1)[-1] if videos and videos[i].filename else "mp4"
+            ext = video_filenames[i].rsplit(".", 1)[-1] if video_filenames[i] else "mp4"
             transcript = await process_video_audio(vb, i, f".{ext}")
             video_transcripts.append(transcript)
         except Exception as e:
@@ -91,13 +100,27 @@ async def upload_documents(
                 "segments": [],
             })
 
-    await _run_supervisor_pipeline(case, seed, raw_texts, video_transcripts)
+        # Extract keyframes + OCR
+        try:
+            from backend.pipeline.keyframes import extract_keyframes
+            kf = await extract_keyframes(vb, i, max_frames=15)
+            ocr_texts.extend(kf.get("ocr_texts", []))
+        except Exception as e:
+            logger.warning(f"Keyframe extraction failed for video {i}: {e}")
 
+    # Run supervisor pipeline in background (non-blocking)
+    background_tasks.add_task(
+        _run_supervisor_background, case, seed, raw_texts, video_transcripts, ocr_texts
+    )
+
+    case["stream_url"] = f"/api/v1/pipeline/{case_id}/stream" if case_id else None
+    case["status"] = "processing"
     return case
 
 
 @router.post("/upload/full")
 async def upload_full(
+    background_tasks: BackgroundTasks,
     question: str = Form(...),
     images: List[UploadFile] = File(default=[]),
     docs: List[UploadFile] = File(default=[]),
@@ -133,9 +156,45 @@ async def upload_full(
                 seed.setdefault(k, v)
 
     case = await _persist_case(question[:80], 3, seed)
+    case_id = case.get("id", "")
     elapsed = round(time.time() - start, 2)
-    logger.info(f"Mode 3 complete in {elapsed}s — case {case.get('id', '?')}")
+    logger.info(f"Mode 3 complete in {elapsed}s — case {case_id}")
 
+    # Extract raw texts + video data for background pipeline
+    raw_texts = []
+    for doc_b in doc_bytes:
+        try:
+            raw_texts.append(doc_b.decode("utf-8", errors="replace"))
+        except Exception:
+            raw_texts.append(str(doc_b[:2000]))
+
+    video_transcripts = []
+    ocr_texts: List[str] = []
+    video_filenames = [v.filename for v in videos]
+    for i, vb in enumerate(vid_bytes):
+        try:
+            from backend.pipeline.audio import process_video_audio
+            ext = video_filenames[i].rsplit(".", 1)[-1] if video_filenames[i] else "mp4"
+            transcript = await process_video_audio(vb, i, f".{ext}")
+            video_transcripts.append(transcript)
+        except Exception as e:
+            logger.warning(f"Video audio failed for video {i}: {e}")
+            video_transcripts.append({"video_index": i, "transcript": "", "segments": []})
+
+        try:
+            from backend.pipeline.keyframes import extract_keyframes
+            kf = await extract_keyframes(vb, i, max_frames=15)
+            ocr_texts.extend(kf.get("ocr_texts", []))
+        except Exception as e:
+            logger.warning(f"Keyframe extraction failed for video {i}: {e}")
+
+    # Run full pipeline in background
+    background_tasks.add_task(
+        _run_supervisor_background, case, seed, raw_texts, video_transcripts, ocr_texts
+    )
+
+    case["stream_url"] = f"/api/v1/pipeline/{case_id}/stream" if case_id else None
+    case["status"] = "processing"
     return case
 
 
@@ -157,13 +216,14 @@ async def _persist_case(title: str, mode: int, seed: dict) -> dict:
     return store.create_case(title=title, mode=mode, seed_packet=seed)
 
 
-async def _run_supervisor_pipeline(
+async def _run_supervisor_background(
     case: dict,
     seed: dict,
     raw_texts: List[str] | None = None,
     video_transcripts: list | None = None,
+    ocr_texts: list | None = None,
 ) -> None:
-    """Run the functional agent supervisor pipeline and build the knowledge graph."""
+    """Run the full agent supervisor pipeline in background with SSE progress."""
     case_id = case.get("id", "")
     if not case_id:
         return
@@ -171,15 +231,21 @@ async def _run_supervisor_pipeline(
     try:
         from backend.agents.supervisor import AgentSupervisor
         from backend.agents.functional.base import AgentInput
+        from backend.routers.pipeline_stream import progress_callback
+        from functools import partial
 
         input_data = AgentInput(
             case_id=case_id,
             raw_texts=raw_texts or [],
             video_transcripts=video_transcripts or [],
+            ocr_texts=ocr_texts or [],
         )
 
+        # Create bound callback for this case
+        on_progress = partial(progress_callback, case_id)
+
         supervisor = AgentSupervisor()
-        results = await supervisor.run_pipeline(input_data)
+        results = await supervisor.run_pipeline(input_data, on_progress=on_progress)
 
         # Build knowledge graph from extracted entities
         from backend.graph.neo4j_client import neo4j_client
@@ -192,6 +258,8 @@ async def _run_supervisor_pipeline(
         logger.info(
             f"Supervisor pipeline complete for {case_id}: "
             f"{len(results.get('entities', []))} entities, "
+            f"{len(results.get('timeline_events', []))} timeline events, "
+            f"{len(results.get('contradictions', []))} contradictions, "
             f"graph: {graph_summary}"
         )
 
@@ -208,5 +276,23 @@ async def _run_supervisor_pipeline(
         except Exception as e:
             logger.warning(f"ChromaDB indexing failed: {e}")
 
+        # Update case status to ready
+        try:
+            client = get_supabase()
+            if client:
+                client.table("cases").update({"status": "ready"}).eq("id", case_id).execute()
+        except Exception:
+            store.update_case_status(case_id, "ready")
+
     except Exception as e:
         logger.warning(f"Supervisor pipeline failed for {case_id}: {e}")
+
+
+async def _run_supervisor_pipeline(
+    case: dict,
+    seed: dict,
+    raw_texts: List[str] | None = None,
+    video_transcripts: list | None = None,
+) -> None:
+    """Legacy sync wrapper — use _run_supervisor_background instead."""
+    await _run_supervisor_background(case, seed, raw_texts, video_transcripts)

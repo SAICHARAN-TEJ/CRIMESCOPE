@@ -1,12 +1,14 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 """
-CrimeScope API v2.0 — FastAPI application entry point.
+CrimeScope API v3.0 — FastAPI application entry point.
 
 Production-ready with:
+  - 7 parallel agents (Ingestion → 5 parallel → Synthesis)
+  - SSE streaming for real-time agent progress
+  - GraphRAG knowledge graph + BFS traversal
   - Redis cache + pub/sub lifecycle
+  - Video keyframe extraction + OCR
   - Neo4j + in-memory graph fallback
-  - Structured startup/shutdown
-  - Health check endpoint
 
 Start with:  uvicorn backend.main:app --reload --port 5001
 """
@@ -37,8 +39,8 @@ async def lifespan(app: FastAPI):
 
     # ── Startup banner ────────────────────────────────────────────────
     logger.info("=" * 55)
-    logger.info("  CrimeScope Swarm Intelligence Engine v2.0.0")
-    logger.info("  Production SaaS MVP — GraphRAG + Parallel Agents")
+    logger.info("  CrimeScope Swarm Intelligence Engine v3.0.0")
+    logger.info("  Enterprise SaaS — 7 Agents + GraphRAG + SSE Streaming")
     logger.info("=" * 55)
 
     # Validate config
@@ -101,8 +103,12 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="CrimeScope API",
-    version="2.0.0",
-    description="Multi-agent swarm intelligence engine with GraphRAG for criminal reconstruction.",
+    version="3.0.0",
+    description=(
+        "Multi-agent swarm intelligence engine with GraphRAG for criminal reconstruction. "
+        "7 parallel agents, SSE progress streaming, video keyframe extraction, "
+        "and synthesis report generation."
+    ),
     lifespan=lifespan,
 )
 
@@ -135,6 +141,7 @@ app.add_middleware(
 # ── Routers ──────────────────────────────────────────────────────────────
 from backend.routers import cases, chat, demo, graph, report, simulation, upload
 from backend.routers import health as health_router
+from backend.routers import pipeline_stream
 
 app.include_router(health_router.router, prefix="/api/v1", tags=["Health"])
 app.include_router(cases.router, prefix="/api/v1", tags=["Cases"])
@@ -143,4 +150,5 @@ app.include_router(graph.router, prefix="/api/v1", tags=["Graph"])
 app.include_router(report.router, prefix="/api/v1", tags=["Report"])
 app.include_router(upload.router, prefix="/api/v1", tags=["Upload"])
 app.include_router(chat.router, prefix="/api/v1", tags=["Chat"])
+app.include_router(pipeline_stream.router, prefix="/api/v1", tags=["Pipeline"])
 app.include_router(demo.router, prefix="/api/v1", tags=["Demo"])
