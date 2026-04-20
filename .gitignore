@@ -1,30 +1,37 @@
+# ── Python ────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+build/
+*.egg
+.pytest_cache/
+.ruff_cache/
+
+# ── Node ──────────────────────────────────────────────────────────────
+node_modules/
+frontend/dist/
+
+# ── Environment ───────────────────────────────────────────────────────
 .env
 .env.local
 .env.*.local
 
-# Dependency and build artifacts
-**/node_modules/
-frontend/dist/
-website/dist/
-app-next/.next/
-app-next/out/
-.next/
-out/
-
-# Python cache and tooling
-**/__pycache__/
-**/*.py[cod]
-**/.pytest_cache/
-**/.mypy_cache/
-
-# Runtime-generated backend data
-backend/uploads/*
-!backend/uploads/.gitkeep
-data/
-
-# Logs and local editor files
-*.log
-.DS_Store
-Thumbs.db
+# ── IDE ───────────────────────────────────────────────────────────────
 .vscode/
 .idea/
+*.swp
+*.swo
+
+# ── Docker ────────────────────────────────────────────────────────────
+docker-compose.override.yml
+
+# ── OS ────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── Logs & Data ───────────────────────────────────────────────────────
+logs/
+*.log
+data/
