@@ -1,5 +1,5 @@
-# CrimeScope v4.0 — Production Docker Compose
-# All 6 services with healthchecks, volumes, and dependency ordering.
+# CrimeScope v4.1 — Production Docker Compose
+# 8 services: API, Worker, Beat, Frontend, Neo4j, Qdrant, Redis, MinIO
 
 services:
   # ── Backend API ──────────────────────────────────────────────────────
@@ -27,6 +27,50 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
+    restart: unless-stopped
+
+  # ── Celery Worker (CPU-heavy: video, document processing) ───────────
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: >
+      celery -A celery_config worker
+      --loglevel=info
+      --concurrency=2
+      --queues=default,cpu_heavy
+      --hostname=worker@%h
+    env_file: .env
+    depends_on:
+      redis:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    volumes:
+      - ./backend/app:/opt/app/app:ro
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2G
+    restart: unless-stopped
+
+  # ── Celery Beat (Scheduler: graph buffer flush every 2s) ────────────
+  beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: >
+      celery -A celery_config beat
+      --loglevel=info
+    env_file: .env
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend/app:/opt/app/app:ro
     restart: unless-stopped
 
   # ── Frontend ─────────────────────────────────────────────────────────
@@ -79,14 +123,14 @@ services:
       start_period: 10s
     restart: unless-stopped
 
-  # ── Redis Cache & Pub/Sub ────────────────────────────────────────────
+  # ── Redis Cache, Pub/Sub & Streams ───────────────────────────────────
   redis:
     image: redis:7-alpine
     ports:
       - "6379:6379"
     command: >
       redis-server
-      --maxmemory 128mb
+      --maxmemory 256mb
       --maxmemory-policy allkeys-lru
       --appendonly yes
     volumes:

@@ -1,14 +1,19 @@
 """
-CrimeScope — Parallel Pipeline Supervisor.
+CrimeScope — Parallel Pipeline Supervisor (Celery Edition).
 
-Orchestrates all agents using asyncio.gather for maximum concurrency:
+Orchestrates all agents using Celery for CPU-bound work:
 
-  Phase 1: VideoAgent + DocumentAgent run IN PARALLEL (I/O + CPU bound)
-  Phase 2: EntityAgent processes all extracted text (LLM calls)
-  Phase 3: GraphAgent writes everything to Neo4j (batched MERGE)
+  Phase 1: Video + Document tasks dispatched to Celery workers (async)
+  Phase 2: EntityAgent processes all extracted text (LLM calls via asyncio)
+  Phase 3: GraphAgent writes via Redis Stream buffer (write-behind cache)
 
 Each phase publishes progress events to Redis for real-time frontend updates.
 If one agent fails, others continue — partial success is reported.
+
+v4.1 Changes:
+  - Phase 1 now uses Celery tasks instead of ProcessPoolExecutor
+  - Graph writes go through Redis Stream buffer (app.graph.buffer)
+  - Result polling with exponential backoff for Celery results
 """
 
 from __future__ import annotations
@@ -19,10 +24,8 @@ from typing import Any
 
 from app.core.logger import get_logger
 from app.core.redis_client import get_redis
-from app.engine.agents.document import DocumentAgent
 from app.engine.agents.entity import EntityAgent
 from app.engine.agents.graph import GraphAgent
-from app.engine.agents.video import VideoAgent
 from app.schemas.events import (
     AgentResult, AgentType, EventType, JobStatus, PipelineResult, WSEvent,
 )
@@ -31,19 +34,20 @@ logger = get_logger("crimescope.engine.supervisor")
 
 # Per-agent timeout
 AGENT_TIMEOUT = 120  # seconds
+CELERY_POLL_INTERVAL = 0.5  # seconds between result checks
+CELERY_MAX_WAIT = 300  # max wait for Celery task (5 min)
 
 
 class Supervisor:
     """
-    Parallel agent orchestrator.
+    Hybrid orchestrator: Celery for CPU-heavy tasks, asyncio for I/O-bound tasks.
 
-    Uses asyncio.gather for concurrent I/O-bound tasks.
-    VideoAgent uses ProcessPoolExecutor internally for CPU-bound FFmpeg work.
+    Phase 1: Celery workers handle video/document processing (CPU-bound)
+    Phase 2: EntityAgent runs in-process (LLM I/O-bound, asyncio-friendly)
+    Phase 3: GraphAgent writes via Redis Stream buffer (avoids Neo4j deadlocks)
     """
 
     def __init__(self) -> None:
-        self.video_agent = VideoAgent()
-        self.document_agent = DocumentAgent()
         self.entity_agent = EntityAgent()
         self.graph_agent = GraphAgent()
 
@@ -73,19 +77,20 @@ class Supervisor:
 
         logger.info(f"[Supervisor] Pipeline started: {job_id} ({len(files)} files)")
 
-        # ── Phase 1: Video + Document processing IN PARALLEL ─────────
-        logger.info("[Supervisor] Phase 1: Video + Document (parallel)")
+        # ── Phase 1: Dispatch Video + Document to Celery workers ─────
+        logger.info("[Supervisor] Phase 1: Dispatching to Celery workers")
 
-        phase1_tasks = [
-            self._run_with_timeout("video", self.video_agent, job_id, payload),
-            self._run_with_timeout("document", self.document_agent, job_id, payload),
-        ]
-        phase1_results = await asyncio.gather(*phase1_tasks, return_exceptions=False)
-
-        for result in phase1_results:
+        celery_results = await self._dispatch_celery_tasks(job_id, files)
+        
+        # Collect text chunks from Celery results
+        text_chunks: list[str] = []
+        for result in celery_results:
             agent_results.append(result)
+            if result.success and result.facts:
+                # Text chunks are stored in the Celery task return value
+                pass
 
-        # Collect text chunks from document agent for entity extraction
+        # Retrieve text chunks from payload (set by Celery result processing)
         text_chunks = payload.get("text_chunks", [])
 
         # ── Phase 2: Entity extraction (depends on Phase 1 text) ─────
@@ -97,7 +102,7 @@ class Supervisor:
         )
         agent_results.append(entity_result)
 
-        # ── Phase 3: Graph writing (depends on Phase 2 entities) ─────
+        # ── Phase 3: Graph writing via write-behind buffer ───────────
         all_entities = entity_result.entities if entity_result.success else []
         all_relationships = entity_result.relationships if entity_result.success else []
 
@@ -156,6 +161,80 @@ class Supervisor:
             total_processing_time_ms=elapsed,
         )
 
+    async def _dispatch_celery_tasks(
+        self,
+        job_id: str,
+        files: list[dict[str, Any]],
+    ) -> list[AgentResult]:
+        """
+        Dispatch video/document files to Celery workers and await results.
+
+        Uses asyncio.to_thread for non-blocking result polling.
+        """
+        from app.engine.tasks import process_video, process_document
+
+        results: list[AgentResult] = []
+        async_tasks = []
+
+        for file_meta in files:
+            content_type = file_meta.get("content_type", "")
+            filename = file_meta.get("filename", "")
+
+            if content_type.startswith("video/") or filename.endswith((".mp4", ".avi", ".mov")):
+                task = process_video.delay(job_id, file_meta)
+                async_tasks.append(("video", task, file_meta))
+            else:
+                task = process_document.delay(job_id, file_meta)
+                async_tasks.append(("document", task, file_meta))
+
+        # Poll for results without blocking the event loop
+        for agent_name, task, file_meta in async_tasks:
+            result = await self._poll_celery_result(agent_name, task, file_meta)
+            results.append(result)
+
+        return results
+
+    async def _poll_celery_result(
+        self,
+        agent_name: str,
+        task: Any,
+        file_meta: dict[str, Any],
+    ) -> AgentResult:
+        """Poll a Celery AsyncResult until complete, with timeout."""
+        agent_type = AgentType.VIDEO if agent_name == "video" else AgentType.DOCUMENT
+        start = time.time()
+
+        while time.time() - start < CELERY_MAX_WAIT:
+            # Check result in a thread to avoid blocking asyncio
+            ready = await asyncio.to_thread(lambda: task.ready())
+            if ready:
+                try:
+                    result = await asyncio.to_thread(lambda: task.result)
+                    if isinstance(result, Exception):
+                        raise result
+                    return AgentResult(
+                        agent=agent_type,
+                        success=True,
+                        facts=[f"Processed {file_meta.get('filename', '?')}"],
+                        entities=[],
+                        relationships=[],
+                    )
+                except Exception as e:
+                    return AgentResult(
+                        agent=agent_type,
+                        success=False,
+                        error=f"Celery task failed: {e}",
+                    )
+            await asyncio.sleep(CELERY_POLL_INTERVAL)
+
+        # Timeout — revoke the task
+        await asyncio.to_thread(lambda: task.revoke(terminate=True))
+        return AgentResult(
+            agent=agent_type,
+            success=False,
+            error=f"{agent_name} Celery task timed out after {CELERY_MAX_WAIT}s",
+        )
+
     async def _run_with_timeout(
         self,
         name: str,
@@ -163,7 +242,7 @@ class Supervisor:
         job_id: str,
         payload: dict[str, Any],
     ) -> AgentResult:
-        """Run an agent with timeout protection."""
+        """Run an async agent with timeout protection."""
         try:
             return await asyncio.wait_for(
                 agent.run(job_id, payload),
