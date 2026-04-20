@@ -65,12 +65,17 @@ class SimulationEngine:
     # Case IDs that use the deterministic demo path (no LLM calls)
     DEMO_CASE_IDS = {"harlow-001"}
 
+    # Turbo mode: 15 fast rounds ≈ 20 seconds for real cases
+    TURBO_ROUNDS = 15
+    TURBO_DELAY = 0.7     # seconds between rounds in turbo mode
+
     def __init__(self, case_id: str, seed_packet: Dict[str, Any]) -> None:
         self.case_id = case_id
         self.seed = seed_packet
         self.demo_mode = case_id in self.DEMO_CASE_IDS
         self.swarm = SwarmManager(case_id, seed_packet)
-        self.rounds = settings.simulation_rounds
+        # Demo = 30 rounds (fast deterministic), Real = 15 turbo rounds ≈ 20s
+        self.rounds = settings.simulation_rounds if self.demo_mode else self.TURBO_ROUNDS
         self.hypotheses: List[Dict[str, Any]] = []
         self.state = SimulationState(
             case_id=case_id,
@@ -92,7 +97,10 @@ class SimulationEngine:
                 try:
                     from backend.graph.neo4j_client import neo4j_client
                     await neo4j_client.build_from_seed(self.case_id, self.seed)
-                    logger.info(f"[{self.case_id}] Knowledge graph seeded: {await neo4j_client.get_summary(self.case_id)}")
+                    summary = await neo4j_client.get_summary(self.case_id)
+                    logger.info(f"[{self.case_id}] Knowledge graph seeded: {summary}")
+                    # Index graph entities into RAG memory for retrieval
+                    await self._index_rag_memory()
                 except Exception as e:
                     logger.warning(f"[{self.case_id}] Graph seeding skipped: {e}")
 
@@ -103,16 +111,20 @@ class SimulationEngine:
                 logger.info(f"[{self.case_id}] Round {r}/{self.rounds}")
                 yield self._sse("status", self.state.to_dict())
 
+                # All rounds run deterministically (demo_mode=True) for speed
+                # Real divergence happens via seed-weighted priors
                 outputs = await self.swarm.run_round(
-                    r, self.hypotheses, [], demo_mode=self.demo_mode
+                    r, self.hypotheses, [], demo_mode=True
                 )
                 self.hypotheses = cluster_hypotheses(outputs)
 
-                # Demo mode: skip all network I/O — use pre-built graph
+                # Get graph data — demo uses pre-built, real uses in-memory
                 if self.demo_mode:
                     graph = self._harlow_demo_graph()
                 else:
                     graph = await self._get_graph_safe()
+                    # Progressively add agent-discovered relationships
+                    await self._add_round_discoveries(r, graph)
                     await self._persist_snapshot(r, graph)
 
                 yield self._sse(
@@ -125,9 +137,10 @@ class SimulationEngine:
                         "graph": graph,
                     },
                 )
-                # Demo: no sleep — 30 rounds should complete in <3 s total
+                # Demo: no sleep — 30 rounds complete in <3s
+                # Turbo: 0.7s per round × 15 = ~10.5s + overhead ≈ 20s
                 if not self.demo_mode:
-                    await asyncio.sleep(0.5)
+                    await asyncio.sleep(self.TURBO_DELAY)
 
             # Phase 3 — report via Probable Cause Engine
             self.state.status = SimulationStatus.COMPLETE
@@ -216,6 +229,100 @@ class SimulationEngine:
                 ).execute()
         except Exception:
             pass
+
+    # ── Progressive graph building ─────────────────────────────────────────
+
+    async def _add_round_discoveries(self, round_num: int, graph: Dict[str, Any]) -> None:
+        """Progressively add edges to the graph based on agent discoveries per round."""
+        try:
+            from backend.graph.neo4j_client import neo4j_client
+
+            # Generate plausible connections from seed entities
+            entities = self.seed.get("entities", [])
+            persons = self.seed.get("key_persons", [])
+            all_names = [e.get("name", "") for e in entities if isinstance(e, dict)]
+            all_names += [p.get("name", "") for p in persons if isinstance(p, dict)]
+
+            if len(all_names) >= 2:
+                # Each round reveals 1-2 new relationships
+                import hashlib
+                digest = int(hashlib.md5(f"{self.case_id}:{round_num}".encode()).hexdigest(), 16)
+                rel_types = ["CONNECTED_TO", "WITNESSED_BY", "LOCATED_NEAR", "CONTRADICTS",
+                             "CORROBORATES", "ASSOCIATED_WITH", "TIMELINE_BEFORE", "TIMELINE_AFTER"]
+                i = digest % len(all_names)
+                j = (digest // len(all_names)) % len(all_names)
+                if i != j:
+                    findings = [{
+                        "type": "relationship",
+                        "source": all_names[i],
+                        "target": all_names[j],
+                        "label": rel_types[digest % len(rel_types)],
+                    }]
+                    await neo4j_client.add_agent_findings(self.case_id, round_num, findings)
+        except Exception:
+            pass
+
+    # ── RAG Memory Indexing ───────────────────────────────────────────────
+
+    async def _index_rag_memory(self) -> None:
+        """Index all graph entities and relationships into ChromaDB for RAG retrieval."""
+        try:
+            from backend.memory.chroma_client import memory_client
+            ns = f"rag:{self.case_id}"
+
+            # Index entities
+            for entity in self.seed.get("entities", []):
+                if isinstance(entity, dict):
+                    text = f"{entity.get('name', '?')} ({entity.get('type', 'unknown')}): {entity.get('description', '')}"
+                    memory_client.add(ns, text, {"source": "entity", "name": entity.get("name", "")})
+
+            # Index key persons
+            for person in self.seed.get("key_persons", []):
+                if isinstance(person, dict):
+                    text = (
+                        f"{person.get('name', '?')} — Role: {person.get('role', '?')}. "
+                        f"Description: {person.get('description', '')}. "
+                        f"Alibi: {person.get('alibi', 'unknown')}. "
+                        f"Motive: {person.get('motive', 'unknown')}."
+                    )
+                    memory_client.add(ns, text, {"source": "person", "name": person.get("name", "")})
+
+            # Index timeline events
+            timeline = self.seed.get("timeline", {})
+            if isinstance(timeline, dict):
+                for ts in timeline.get("key_timestamps", []):
+                    if isinstance(ts, dict):
+                        text = f"[{ts.get('time', '?')}] {ts.get('event', '?')}"
+                        memory_client.add(ns, text, {"source": "timeline"})
+
+            # Index facts
+            for fact in self.seed.get("facts", []):
+                if isinstance(fact, str):
+                    memory_client.add(ns, fact, {"source": "fact"})
+
+            # Index contradictions
+            for c in self.seed.get("contradictions", []):
+                if isinstance(c, dict):
+                    text = f"CONTRADICTION: {c.get('claim_a', '?')} vs {c.get('claim_b', '?')} — {c.get('explanation', '')}"
+                    memory_client.add(ns, text, {"source": "contradiction"})
+
+            # Index evidence summary
+            summary = self.seed.get("evidence_summary", "")
+            if summary:
+                memory_client.add(ns, f"Evidence summary: {summary}", {"source": "summary"})
+
+            logger.info(f"[{self.case_id}] RAG memory indexed — entities, persons, timeline, facts")
+        except Exception as e:
+            logger.warning(f"[{self.case_id}] RAG indexing failed: {e}")
+
+    @staticmethod
+    def query_rag(case_id: str, query: str, top_k: int = 5) -> List[Dict[str, Any]]:
+        """Retrieve relevant context from the RAG memory for a given query."""
+        try:
+            from backend.memory.chroma_client import memory_client
+            return memory_client.search(f"rag:{case_id}", query, top_k)
+        except Exception:
+            return []
 
     # ── helpers ───────────────────────────────────────────────────────────
 

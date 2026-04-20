@@ -48,17 +48,31 @@ def _get_case_context(case_id: str) -> str:
 @router.post("/chat/{case_id}")
 async def chat(case_id: str, body: ChatRequest):
     """
-    Simple RAG-lite chat — feeds the question + case context
-    through the reasoning model for a grounded answer.
+    RAG-powered chat — retrieves relevant memories from the graph-indexed
+    ChromaDB store, then feeds them + case context to the reasoning model.
     """
     context = _get_case_context(case_id)
 
+    # RAG retrieval — pull most relevant fragments from indexed graph memory
+    rag_fragments = []
+    try:
+        from backend.simulation.engine import SimulationEngine
+        results = SimulationEngine.query_rag(case_id, body.question, top_k=8)
+        rag_fragments = [r.get("text", "") for r in results if r.get("text")]
+    except Exception as e:
+        logger.warning(f"RAG retrieval failed: {e}")
+
+    rag_context = ""
+    if rag_fragments:
+        rag_context = "\n\nRELEVANT GRAPH MEMORIES:\n" + "\n".join(f"• {f}" for f in rag_fragments)
+
     answer = await openrouter.chat(
         settings.reasoning_model_name,
-        f"CASE CONTEXT:\n{context[:3000]}\n\nQUESTION: {body.question}",
+        f"CASE CONTEXT:\n{context[:3000]}{rag_context}\n\nQUESTION: {body.question}",
         system=(
             "You are the CrimeScope swarm intelligence analyst. "
-            "Answer based strictly on the case evidence provided."
+            "Answer based strictly on the case evidence and retrieved graph memories. "
+            "Cite specific entities, timeline events, and relationships from the knowledge graph."
         ),
     )
     return {"case_id": case_id, "question": body.question, "answer": answer}

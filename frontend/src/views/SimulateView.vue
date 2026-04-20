@@ -13,7 +13,7 @@
       <aside class="sim-sidebar">
         <!-- Header -->
         <div class="sb-header">
-          <span class="sb-panel-title">Knowledge Graph</span>
+          <span class="sb-panel-title">{{ caseTitle || 'Knowledge Graph' }}</span>
           <div class="sb-stats font-mono">
             <span>{{ graph.stats.nodes }} nodes</span>
             <span>{{ graph.stats.edges }} edges</span>
@@ -64,7 +64,9 @@
 
         <!-- Controls -->
         <div class="sb-controls" v-if="sim.status === 'idle'">
-          <button class="btn btn--primary" @click="startSim">▶ START SIMULATION</button>
+          <button class="btn btn--primary" @click="startSim" :disabled="loading">
+            {{ loading ? '⏳ Loading case data...' : '▶ START SIMULATION' }}
+          </button>
         </div>
         <div class="sb-controls" v-else-if="sim.status === 'initialising'">
           <div class="progress-bar">
@@ -96,6 +98,7 @@ import Legend from '@/components/graph/Legend.vue'
 import { useGraphStore } from '@/stores/graphStore.js'
 import { useSimulationStore } from '@/stores/simulationStore.js'
 import { HARLOW_NODES, HARLOW_EDGES, DEMO_HYPOTHESES } from '@/data/harlow.js'
+import api from '@/api/client'
 
 const route = useRoute()
 const graph = useGraphStore()
@@ -103,6 +106,8 @@ const sim = useSimulationStore()
 const feedRef = ref(null)
 const caseId = computed(() => route.params.id)
 const errorMsg = ref('')
+const loading = ref(false)
+const caseTitle = ref('')
 
 let eventSource = null
 
@@ -137,12 +142,47 @@ function feedClass(msg) {
   return ''
 }
 
-onMounted(() => {
-  graph.setGraph(
-    HARLOW_NODES.map(n => ({ ...n })),
-    HARLOW_EDGES.map(e => ({ ...e }))
-  )
-  sim.hypotheses = DEMO_HYPOTHESES.map(h => ({ ...h }))
+onMounted(async () => {
+  const id = caseId.value
+
+  if (id === 'harlow-001') {
+    // Demo mode — load pre-built data
+    graph.setGraph(
+      HARLOW_NODES.map(n => ({ ...n })),
+      HARLOW_EDGES.map(e => ({ ...e }))
+    )
+    sim.hypotheses = DEMO_HYPOTHESES.map(h => ({ ...h }))
+    caseTitle.value = 'Harlow Street Incident'
+  } else {
+    // Real case — fetch graph from backend
+    loading.value = true
+    try {
+      const res = await api.get(`/graph/${id}`)
+      const data = res.data
+      if (data.nodes && data.nodes.length) {
+        // Normalise node types to lowercase for the graph store filter
+        const nodes = data.nodes.map(n => ({
+          id: n.id || n.label?.replace(/\s+/g, '_'),
+          label: n.label || n.id,
+          type: (n.type || 'evidence').toLowerCase(),
+          certainty: n.certainty || n.confidence || 0.8,
+        }))
+        const edges = (data.edges || []).map(e => ({
+          source: e.source,
+          target: e.target,
+          type: e.type || e.label || 'related_to',
+          label: e.label || e.type || 'related_to',
+          certainty: e.certainty || 0.7,
+        }))
+        graph.setGraph(nodes, edges)
+      }
+      caseTitle.value = data.title || `Case ${id.slice(0, 8)}`
+    } catch (e) {
+      console.warn('Graph pre-load failed:', e.message)
+    } finally {
+      loading.value = false
+    }
+  }
 })
 
 function startSim() {
@@ -155,11 +195,15 @@ function startSim() {
   eventSource.addEventListener('status', (e) => {
     const data = JSON.parse(e.data)
     sim.status = data.status
+    // Update total rounds from backend
+    if (data.total_rounds) sim.totalRounds = data.total_rounds
   })
 
   eventSource.addEventListener('round', (e) => {
     const data = JSON.parse(e.data)
     sim.status = 'simulating'
+    // Update total from backend
+    if (data.total) sim.totalRounds = data.total
     sim.applyRound(data)
     if (data.graph && data.graph.nodes?.length) {
       graph.appendNodes(data.graph.nodes, data.graph.edges || [])
