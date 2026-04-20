@@ -8,12 +8,22 @@ services:
       - "5001:5001"
     env_file: .env
     depends_on:
-      # - neo4j       # Optional: uncomment if running with Neo4j
-      - chromadb
+      neo4j:
+        condition: service_started
+      redis:
+        condition: service_started
+      chromadb:
+        condition: service_started
     volumes:
       - ./data/chroma:/app/data/chroma
       - ./data/mem0:/app/data/mem0
+      - ./data/whisper:/root/.cache/whisper
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5001/api/v1/health/ping"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
 
   # ── Frontend (Vue 3 + Vite → nginx) ─────────────────────────────────
   frontend:
@@ -35,7 +45,7 @@ services:
       - "80:80"
     restart: unless-stopped
 
-  # ── Neo4j ────────────────────────────────────────────────────────────
+  # ── Neo4j (Knowledge Graph) ──────────────────────────────────────────
   neo4j:
     image: neo4j:5-community
     ports:
@@ -45,18 +55,61 @@ services:
       NEO4J_AUTH: ${NEO4J_AUTH:-neo4j/crimescope_password}
       NEO4J_PLUGINS: '["apoc"]'
     volumes:
-      - ./data/neo4j:/data
+      - neo4j_data:/data
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "neo4j", "status"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
 
-  # ── ChromaDB ─────────────────────────────────────────────────────────
+  # ── Redis (Cache + Pub/Sub + Rate Limiting) ──────────────────────────
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  # ── ChromaDB (Vector Store) ──────────────────────────────────────────
   chromadb:
     image: chromadb/chroma:latest
     ports:
       - "8000:8000"
     volumes:
-      - ./data/chroma:/chroma/chroma
+      - chroma_data:/chroma/chroma
     restart: unless-stopped
+
+  # ── PostgreSQL (standalone relational DB — optional) ─────────────────
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: crimescope
+      POSTGRES_USER: crimescope
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-crimescope_dev}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U crimescope"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    profiles:
+      - standalone  # Only starts with: docker compose --profile standalone up
 
 
 volumes:
   neo4j_data:
+  redis_data:
+  chroma_data:
+  postgres_data:

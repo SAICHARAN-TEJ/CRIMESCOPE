@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Chat router — post-simulation Q&A with the swarm and individual agents."""
+"""Chat router — GraphRAG-powered Q&A with connected evidence paths."""
+
+import hashlib
 
 from fastapi import APIRouter
 from pydantic import BaseModel
@@ -48,12 +50,38 @@ def _get_case_context(case_id: str) -> str:
 @router.post("/chat/{case_id}")
 async def chat(case_id: str, body: ChatRequest):
     """
-    RAG-powered chat — retrieves relevant memories from the graph-indexed
-    ChromaDB store, then feeds them + case context to the reasoning model.
+    GraphRAG-powered chat — retrieves connected evidence paths from the
+    knowledge graph, plus ChromaDB vector memories, then synthesises
+    an answer via the reasoning model.
     """
+    # ── Check Redis cache ────────────────────────────────────────────
+    cache_key = f"chat:{case_id}:{hashlib.md5(body.question.encode()).hexdigest()}"
+    try:
+        from backend.infrastructure.redis_client import redis_cache
+        cached = await redis_cache.get_json(cache_key)
+        if cached:
+            logger.info(f"Chat cache hit: {cache_key}")
+            return cached
+    except Exception:
+        pass
+
     context = _get_case_context(case_id)
 
-    # RAG retrieval — pull most relevant fragments from indexed graph memory
+    # ── GraphRAG retrieval — connected evidence paths ────────────────
+    graph_context = ""
+    try:
+        from backend.graph.neo4j_client import neo4j_client
+        from backend.graph.traversal import GraphTraversal
+        traversal = GraphTraversal(neo4j_client)
+        paths = await traversal.graph_rag_retrieve(case_id, body.question, max_hops=3, top_k=5)
+        if paths:
+            path_summaries = [f"• {p.summarize()} (certainty: {p.cumulative_certainty:.0%})" for p in paths]
+            graph_context = "\n\nCONNECTED EVIDENCE PATHS (from Knowledge Graph):\n" + "\n".join(path_summaries)
+            logger.info(f"GraphRAG: {len(paths)} evidence paths retrieved")
+    except Exception as e:
+        logger.warning(f"GraphRAG traversal failed: {e}")
+
+    # ── ChromaDB vector retrieval (complementary) ────────────────────
     rag_fragments = []
     try:
         from backend.simulation.engine import SimulationEngine
@@ -64,18 +92,30 @@ async def chat(case_id: str, body: ChatRequest):
 
     rag_context = ""
     if rag_fragments:
-        rag_context = "\n\nRELEVANT GRAPH MEMORIES:\n" + "\n".join(f"• {f}" for f in rag_fragments)
+        rag_context = "\n\nRELEVANT MEMORIES (from Vector Store):\n" + "\n".join(f"• {f}" for f in rag_fragments)
 
     answer = await openrouter.chat(
         settings.reasoning_model_name,
-        f"CASE CONTEXT:\n{context[:3000]}{rag_context}\n\nQUESTION: {body.question}",
+        f"CASE CONTEXT:\n{context[:3000]}{graph_context}{rag_context}\n\nQUESTION: {body.question}",
         system=(
             "You are the CrimeScope swarm intelligence analyst. "
-            "Answer based strictly on the case evidence and retrieved graph memories. "
-            "Cite specific entities, timeline events, and relationships from the knowledge graph."
+            "Answer based strictly on the case evidence, connected evidence paths "
+            "from the knowledge graph, and retrieved memories. "
+            "Cite specific entities, timeline events, and relationships. "
+            "When evidence paths show contradictions, highlight them explicitly."
         ),
     )
-    return {"case_id": case_id, "question": body.question, "answer": answer}
+
+    result = {"case_id": case_id, "question": body.question, "answer": answer}
+
+    # ── Cache result ─────────────────────────────────────────────────
+    try:
+        from backend.infrastructure.redis_client import redis_cache
+        await redis_cache.set_json(cache_key, result, ttl=300)  # 5 min cache
+    except Exception:
+        pass
+
+    return result
 
 
 # ── Report-level chat (ReportAgent) ──────────────────────────────────────

@@ -17,10 +17,12 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     # ── LLM (OpenRouter) ─────────────────────────────────────────────────
     llm_api_key: str = Field("", alias="LLM_API_KEY")
+    openrouter_api_key: str = Field("", alias="OPENROUTER_API_KEY")  # Alias
     llm_base_url: str = Field("https://openrouter.ai/api/v1", alias="LLM_BASE_URL")
     llm_model_name: str = Field("deepseek/deepseek-v3:free", alias="LLM_MODEL_NAME")
     reasoning_model_name: str = Field("deepseek/deepseek-r1:free", alias="REASONING_MODEL_NAME")
     fast_model_name: str = Field("meta-llama/llama-3.3-70b:free", alias="FAST_MODEL_NAME")
+    synthesis_model_name: str = Field("google/gemini-2.5-flash-preview:thinking", alias="SYNTHESIS_MODEL_NAME")
     vision_model_name: str = Field("google/gemini-2.5-pro:free", alias="VISION_MODEL_NAME")
 
     # ── Supabase ─────────────────────────────────────────────────────────
@@ -35,9 +37,23 @@ class Settings(BaseSettings):
     # ── ChromaDB ─────────────────────────────────────────────────────────
     chroma_persist_path: str = Field("./data/chroma", alias="CHROMA_PERSIST_PATH")
 
+    # ── Redis ────────────────────────────────────────────────────────────
+    redis_url: str = Field("redis://localhost:6379/0", alias="REDIS_URL")
+
+    # ── PostgreSQL (standalone — optional alternative to Supabase) ───────
+    postgres_dsn: str = Field("", alias="DATABASE_URL")
+
+    # ── Whisper (audio transcription) ────────────────────────────────────
+    whisper_model_size: str = Field("base", alias="WHISPER_MODEL_SIZE")
+
+    # ── Agent Pipeline ───────────────────────────────────────────────────
+    agent_timeout_seconds: int = Field(60, alias="AGENT_TIMEOUT_SECONDS")
+
     # ── Simulation ───────────────────────────────────────────────────────
     swarm_agent_count: int = Field(1000, alias="SWARM_AGENT_COUNT")
+    num_agents: int = Field(1000, alias="NUM_AGENTS")  # Alias for health check
     simulation_rounds: int = Field(30, alias="SIMULATION_ROUNDS")
+    max_rounds: int = Field(30, alias="MAX_ROUNDS")  # Alias for health check
     max_images_mode1: int = Field(6, alias="MAX_IMAGES_MODE1")
     max_documents_mode2: int = Field(3, alias="MAX_DOCUMENTS_MODE2")
     max_videos_mode2: int = Field(2, alias="MAX_VIDEOS_MODE2")

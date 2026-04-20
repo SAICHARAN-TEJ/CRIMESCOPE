@@ -182,6 +182,133 @@ class Neo4jClient:
             return await self._neo4j_get_summary(case_id)
         return self._mem.summary(case_id)
 
+    # ── GraphRAG Traversal Queries ──────────────────────────────────────
+
+    async def find_entity_by_name(
+        self, case_id: str, name: str
+    ) -> Optional[Dict[str, Any]]:
+        """Find a node by name in the graph."""
+        if self._connected:
+            async with self._driver.session() as session:
+                result = await session.run(
+                    "MATCH (n {case_id: $cid, name: $name}) RETURN n LIMIT 1",
+                    cid=case_id, name=name,
+                )
+                record = await result.single()
+                if record:
+                    n = record["n"]
+                    return {
+                        "id": str(n.element_id),
+                        "label": n.get("name", "?"),
+                        "type": list(n.labels)[0].lower() if n.labels else "unknown",
+                        "properties": dict(n),
+                    }
+        else:
+            for node in self._mem._nodes.get(case_id, []):
+                if node.get("label", "").lower() == name.lower():
+                    return node
+        return None
+
+    async def find_shortest_path_cypher(
+        self, case_id: str, entity_a: str, entity_b: str
+    ) -> List[Dict[str, Any]]:
+        """Find the shortest path between two entities using Cypher."""
+        if not self._connected:
+            return []
+        try:
+            async with self._driver.session() as session:
+                result = await session.run(
+                    """
+                    MATCH (a {case_id: $cid, name: $src}),
+                          (b {case_id: $cid, name: $tgt}),
+                          p = shortestPath((a)-[*..6]-(b))
+                    RETURN nodes(p) AS nodes, relationships(p) AS rels
+                    LIMIT 1
+                    """,
+                    cid=case_id, src=entity_a, tgt=entity_b,
+                )
+                record = await result.single()
+                if record:
+                    path_nodes = [
+                        {"name": n.get("name", "?"), "type": list(n.labels)[0].lower() if n.labels else "unknown"}
+                        for n in record["nodes"]
+                    ]
+                    return path_nodes
+        except Exception as e:
+            logger.warning(f"Shortest path query failed: {e}")
+        return []
+
+    async def find_contradictions_cypher(self, case_id: str) -> List[Dict[str, Any]]:
+        """Find all CONTRADICTS relationships in the graph."""
+        if not self._connected:
+            # In-memory fallback
+            contradictions = []
+            for edge in self._mem._edges.get(case_id, []):
+                if "CONTRADICT" in edge.get("type", "").upper():
+                    contradictions.append(edge)
+            return contradictions
+        try:
+            async with self._driver.session() as session:
+                result = await session.run(
+                    """
+                    MATCH (a {case_id: $cid})-[r:CONTRADICTS]->(b {case_id: $cid})
+                    RETURN a.name AS source, b.name AS target, properties(r) AS props
+                    """,
+                    cid=case_id,
+                )
+                contradictions = []
+                async for record in result:
+                    contradictions.append({
+                        "source": record["source"],
+                        "target": record["target"],
+                        "properties": dict(record["props"]) if record["props"] else {},
+                    })
+                return contradictions
+        except Exception as e:
+            logger.warning(f"Contradictions query failed: {e}")
+        return []
+
+    async def get_entity_neighborhood_cypher(
+        self, case_id: str, entity_name: str, hops: int = 2
+    ) -> Dict[str, Any]:
+        """Get the local subgraph around an entity (N-hop neighborhood)."""
+        if not self._connected:
+            # Delegate to in-memory traversal
+            from backend.graph.traversal import GraphTraversal
+            t = GraphTraversal(self)
+            return await t.get_entity_neighborhood(case_id, entity_name, hops)
+        try:
+            async with self._driver.session() as session:
+                result = await session.run(
+                    f"""
+                    MATCH (start {{case_id: $cid, name: $name}})
+                    CALL apoc.path.subgraphAll(start, {{maxLevel: $hops}})
+                    YIELD nodes, relationships
+                    RETURN nodes, relationships
+                    """,
+                    cid=case_id, name=entity_name, hops=hops,
+                )
+                record = await result.single()
+                if record:
+                    nodes = [
+                        {"id": str(n.element_id), "label": n.get("name", "?"),
+                         "type": list(n.labels)[0].lower() if n.labels else "unknown"}
+                        for n in record["nodes"]
+                    ]
+                    edges = [
+                        {"source": str(r.start_node.element_id),
+                         "target": str(r.end_node.element_id),
+                         "type": r.type}
+                        for r in record["relationships"]
+                    ]
+                    return {"nodes": nodes, "edges": edges}
+        except Exception as e:
+            logger.warning(f"Neighborhood query failed: {e} — falling back to in-memory")
+        # Fallback to in-memory traversal
+        from backend.graph.traversal import GraphTraversal
+        t = GraphTraversal(self)
+        return await t.get_entity_neighborhood(case_id, entity_name, hops)
+
     # ── Cleanup ──────────────────────────────────────────────────────────
 
     async def cleanup(self, case_id: str) -> None:
