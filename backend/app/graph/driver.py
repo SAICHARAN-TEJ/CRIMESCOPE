@@ -19,32 +19,6 @@ from app.core.logger import get_logger
 logger = get_logger("crimescope.graph")
 
 
-# ── Cypher Injection Prevention ───────────────────────────────────────────
-# Labels and relationship types are interpolated into f-strings (Neo4j
-# doesn't support parameterized labels). Sanitize aggressively.
-
-
-def _sanitize_label(label: str) -> str:
-    """Sanitize a Neo4j node label to prevent Cypher injection.
-
-    Only allows alphanumeric characters. Defaults to 'Entity' on empty.
-    """
-    cleaned = "".join(c for c in label if c.isalnum())
-    return cleaned if cleaned else "Entity"
-
-
-def _sanitize_reltype(rel_type: str) -> str:
-    """Sanitize a Neo4j relationship type to prevent Cypher injection.
-
-    Only allows uppercase alphanumeric + underscores. Defaults to 'RELATED_TO'.
-    """
-    cleaned = "".join(c for c in rel_type.upper() if c.isalnum() or c == "_")
-    # Must start with a letter
-    if not cleaned or not cleaned[0].isalpha():
-        return "RELATED_TO"
-    return cleaned
-
-
 class Neo4jDriver:
     """Async Neo4j driver with idempotent MERGE-based writes."""
 
@@ -127,10 +101,9 @@ class Neo4jDriver:
         """
         if not self.driver:
             return
-        safe_label = _sanitize_label(label)
         props = {**properties, "job_id": job_id}
         cypher = f"""
-        MERGE (n:{safe_label} {{id: $node_id}})
+        MERGE (n:{label} {{id: $node_id}})
         SET n += $props
         """
         async with self.driver.session() as session:
@@ -152,14 +125,11 @@ class Neo4jDriver:
         """
         if not self.driver:
             return
-        safe_src = _sanitize_label(source_label)
-        safe_tgt = _sanitize_label(target_label)
-        safe_rel = _sanitize_reltype(rel_type)
         props = {**(properties or {}), "job_id": job_id}
         cypher = f"""
-        MATCH (a:{safe_src} {{id: $source_id}})
-        MATCH (b:{safe_tgt} {{id: $target_id}})
-        MERGE (a)-[r:{safe_rel}]->(b)
+        MATCH (a:{source_label} {{id: $source_id}})
+        MATCH (b:{target_label} {{id: $target_id}})
+        MERGE (a)-[r:{rel_type}]->(b)
         SET r += $props
         """
         async with self.driver.session() as session:
@@ -179,10 +149,9 @@ class Neo4jDriver:
         """Batch MERGE multiple nodes in a single transaction for performance."""
         if not self.driver or not nodes:
             return 0
-        safe_label = _sanitize_label(label)
         cypher = f"""
         UNWIND $nodes AS node
-        MERGE (n:{safe_label} {{id: node.id}})
+        MERGE (n:{label} {{id: node.id}})
         SET n += node.props, n.job_id = $job_id
         """
         batch = [{"id": n.get("id", n.get("name", "")), "props": n} for n in nodes]

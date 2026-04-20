@@ -1,5 +1,5 @@
 /**
- * CrimeScope — Pinia Analysis Store (v4.1 with BATCH_UPDATE support).
+ * CrimeScope — Pinia Analysis Store (Antigravity-Hardened).
  *
  * Central state management for the analysis pipeline:
  *   - Agent statuses (idle → running → complete/error)
@@ -7,14 +7,16 @@
  *   - Pipeline status and error tracking
  *   - WebSocket event handlers
  *
- * v4.1 Changes:
- *   - Handles BATCH_UPDATE events (500ms batched from server)
- *   - Merges arrays instead of pushing one-by-one
- *   - Confidence scores on nodes for visual sizing
+ * Hardened against:
+ *   - 500+ nodes arriving in 1 second (throttled graph updates, max 10/sec)
+ *   - Out-of-order events (edge before node → deferred edge queue)
+ *   - Unbounded eventLog growth (capped at 1000 entries)
+ *   - Null/undefined event.data access (safe property access everywhere)
+ *   - O(n²) array spread (in-place push with batched reactivity trigger)
  */
 
 import { defineStore } from "pinia";
-import { ref, computed } from "vue";
+import { ref, computed, shallowRef, triggerRef } from "vue";
 import type {
   AgentStatus,
   AgentType,
@@ -27,6 +29,11 @@ import type {
   WSEvent,
 } from "@/types";
 
+// ── Safety Limits ────────────────────────────────────────────────────────
+const MAX_EVENT_LOG = 1000;          // Cap eventLog to prevent memory leak
+const GRAPH_UPDATE_MIN_INTERVAL = 100; // ms — max 10 reactive graph updates/sec
+const MAX_DEFERRED_EDGES = 5000;     // Cap deferred edge queue
+
 export const useAnalysisStore = defineStore("analysis", () => {
   // ── State ──────────────────────────────────────────────────────────
   const token = ref<string>("");
@@ -36,24 +43,33 @@ export const useAnalysisStore = defineStore("analysis", () => {
   const processingTimeMs = ref<number>(0);
 
   const agents = ref<Map<string, AgentStatus>>(new Map());
-  const nodes = ref<GraphNode[]>([]);
-  const edges = ref<GraphEdge[]>([]);
+
+  // Use shallowRef for large arrays — prevents deep reactivity overhead
+  const nodes = shallowRef<GraphNode[]>([]);
+  const edges = shallowRef<GraphEdge[]>([]);
   const eventLog = ref<WSEvent[]>([]);
+
+  // ── Internal tracking ──────────────────────────────────────────────
+  const nodeIdSet = new Set<string>();            // O(1) dedup (non-reactive, perf)
+  const edgeKeySet = new Set<string>();            // Dedup edges too
+  const deferredEdges: GraphEdge[] = [];           // Edges waiting for their nodes
+  let lastGraphUpdateTs = 0;                       // Throttle timestamp
+  let pendingGraphFlush: ReturnType<typeof setTimeout> | null = null;
 
   // ── Computed ───────────────────────────────────────────────────────
   const agentList = computed(() => Array.from(agents.value.values()));
 
   const visNodes = computed<VisNode[]>(() =>
-    nodes.value.map((n) => ({
-      id: n.id,
-      label: n.label,
-      group: n.type,
-      title: `${n.type}: ${n.label}${n.properties?.confidence ? ` (${(n.properties.confidence * 100).toFixed(0)}%)` : ""}`,
-      // Size nodes by confidence — higher confidence = larger node
-      size: n.properties?.confidence
-        ? Math.max(12, Math.round((n.properties.confidence as number) * 30))
-        : 18,
-    }))
+    nodes.value.map((n) => {
+      const conf = _safeNumber(n.properties?.confidence, 0);
+      return {
+        id: n.id,
+        label: n.label,
+        group: n.type,
+        title: `${n.type}: ${n.label}${conf > 0 ? ` (${(conf * 100).toFixed(0)}%)` : ""}`,
+        size: conf > 0 ? Math.max(12, Math.round(conf * 30)) : 18,
+      };
+    })
   );
 
   const visEdges = computed<VisEdge[]>(() =>
@@ -67,9 +83,6 @@ export const useAnalysisStore = defineStore("analysis", () => {
   );
 
   const isConnected = ref(false);
-
-  // Track node IDs for fast dedup
-  const nodeIdSet = ref<Set<string>>(new Set());
 
   // ── Actions ────────────────────────────────────────────────────────
 
@@ -85,9 +98,15 @@ export const useAnalysisStore = defineStore("analysis", () => {
     nodes.value = [];
     edges.value = [];
     eventLog.value = [];
-    nodeIdSet.value.clear();
+    nodeIdSet.clear();
+    edgeKeySet.clear();
+    deferredEdges.length = 0;
+    lastGraphUpdateTs = 0;
+    if (pendingGraphFlush) {
+      clearTimeout(pendingGraphFlush);
+      pendingGraphFlush = null;
+    }
 
-    // Initialize agent statuses
     const agentTypes: AgentType[] = ["video", "document", "entity", "graph"] as AgentType[];
     for (const type of agentTypes) {
       agents.value.set(type, {
@@ -100,9 +119,15 @@ export const useAnalysisStore = defineStore("analysis", () => {
   }
 
   function handleWSEvent(event: WSEvent) {
+    // Bounded event log — drop oldest when full
+    if (eventLog.value.length >= MAX_EVENT_LOG) {
+      eventLog.value = eventLog.value.slice(-Math.floor(MAX_EVENT_LOG / 2));
+    }
     eventLog.value.push(event);
 
-    switch (event.event as string) {
+    const eventType = _safeStr(event?.event);
+
+    switch (eventType) {
       case "CONNECTED":
         isConnected.value = true;
         break;
@@ -115,58 +140,39 @@ export const useAnalysisStore = defineStore("analysis", () => {
         _handleBatchUpdate(event);
         break;
 
-      case "AGENT_START": {
-        const agentType = event.agent;
-        if (agentType && agents.value.has(agentType)) {
-          const agent = agents.value.get(agentType)!;
-          agent.status = "running";
-          agents.value.set(agentType, { ...agent });
-        }
+      case "AGENT_START":
+        _updateAgent(event, "running");
         break;
-      }
 
-      case "AGENT_COMPLETE": {
-        const agentType = event.agent;
-        if (agentType && agents.value.has(agentType)) {
-          const agent = agents.value.get(agentType)!;
-          agent.status = "complete";
-          agent.processingTimeMs = (event.data.processing_time_ms as number) || 0;
-          agent.entityCount = (event.data.entities as number) || 0;
-          agents.value.set(agentType, { ...agent });
-        }
+      case "AGENT_COMPLETE":
+        _updateAgentComplete(event);
         break;
-      }
 
-      case "AGENT_ERROR": {
-        const agentType = event.agent;
-        if (agentType && agents.value.has(agentType)) {
-          const agent = agents.value.get(agentType)!;
-          agent.status = "error";
-          agent.error = (event.data.error as string) || "Unknown error";
-          agents.value.set(agentType, { ...agent });
-        }
+      case "AGENT_ERROR":
+        _updateAgentError(event);
         break;
-      }
 
-      case "GRAPH_NODE_ADD": {
-        _addNode(event.data as unknown as GraphNode);
+      case "GRAPH_NODE_ADD":
+        _addNodeSafe(event?.data as unknown as GraphNode);
+        _scheduleGraphFlush();
         break;
-      }
 
-      case "GRAPH_EDGE_ADD": {
-        _addEdge(event.data as unknown as GraphEdge);
+      case "GRAPH_EDGE_ADD":
+        _addEdgeSafe(event?.data as unknown as GraphEdge);
+        _scheduleGraphFlush();
         break;
-      }
 
       case "PIPELINE_COMPLETE": {
-        const pipelineStatus = (event.data.status as string) || "completed";
-        status.value = pipelineStatus;
-        processingTimeMs.value = (event.data.processing_time_ms as number) || 0;
+        const data = event?.data;
+        status.value = _safeStr(data?.status, "completed");
+        processingTimeMs.value = _safeNumber(data?.processing_time_ms, 0);
+        // Flush any remaining deferred edges
+        _flushDeferredEdges();
+        _triggerGraphReactivity();
         break;
       }
 
       case "HEARTBEAT":
-        // Keep-alive, no state change
         break;
 
       default:
@@ -174,113 +180,189 @@ export const useAnalysisStore = defineStore("analysis", () => {
     }
   }
 
-  /**
-   * Handle BATCH_UPDATE — process all buffered events in one pass.
-   * This is the v4.1 optimization that reduces re-render thrashing.
-   */
+  // ── Batch Update Handler ───────────────────────────────────────────
+
   function _handleBatchUpdate(batchEvent: WSEvent) {
-    const events = (batchEvent.data?.events as WSEvent[]) || [];
-    
-    // Collect new nodes/edges to add in batch
-    const newNodes: GraphNode[] = [];
-    const newEdges: GraphEdge[] = [];
+    const events = (batchEvent?.data?.events as WSEvent[]) || [];
+    if (!Array.isArray(events) || events.length === 0) return;
+
+    let graphDirty = false;
 
     for (const event of events) {
-      const eventType = event.event || (event as any).event;
+      const eventType = _safeStr(event?.event);
 
       switch (eventType) {
-        case "AGENT_START": {
-          const agentType = event.agent;
-          if (agentType && agents.value.has(agentType)) {
-            const agent = agents.value.get(agentType)!;
-            agent.status = "running";
-            agents.value.set(agentType, { ...agent });
-          }
+        case "AGENT_START":
+          _updateAgent(event, "running");
           break;
-        }
 
-        case "AGENT_COMPLETE": {
-          const agentType = event.agent;
-          if (agentType && agents.value.has(agentType)) {
-            const agent = agents.value.get(agentType)!;
-            agent.status = "complete";
-            agent.processingTimeMs = (event.data?.processing_time_ms as number) || 0;
-            agent.entityCount = (event.data?.entities as number) || 0;
-            agents.value.set(agentType, { ...agent });
-          }
+        case "AGENT_COMPLETE":
+          _updateAgentComplete(event);
           break;
-        }
 
-        case "AGENT_ERROR": {
-          const agentType = event.agent;
-          if (agentType && agents.value.has(agentType)) {
-            const agent = agents.value.get(agentType)!;
-            agent.status = "error";
-            agent.error = (event.data?.error as string) || "Unknown error";
-            agents.value.set(agentType, { ...agent });
-          }
+        case "AGENT_ERROR":
+          _updateAgentError(event);
           break;
-        }
 
         case "GRAPH_NODE_ADD": {
-          const nodeData = (event.data || event) as unknown as GraphNode;
-          if (nodeData.id && !nodeIdSet.value.has(nodeData.id)) {
-            newNodes.push({
-              id: nodeData.id,
-              label: nodeData.label || nodeData.id,
-              type: nodeData.type || "unknown",
-              properties: nodeData.properties || {},
-            });
-            nodeIdSet.value.add(nodeData.id);
-          }
+          const added = _addNodeSafe((event?.data || event) as unknown as GraphNode);
+          if (added) graphDirty = true;
           break;
         }
 
         case "GRAPH_EDGE_ADD": {
-          const edgeData = (event.data || event) as unknown as GraphEdge;
-          if (edgeData.source && edgeData.target) {
-            newEdges.push({
-              source: edgeData.source,
-              target: edgeData.target,
-              label: edgeData.label || "RELATED_TO",
-              properties: edgeData.properties || {},
-            });
-          }
+          const added = _addEdgeSafe((event?.data || event) as unknown as GraphEdge);
+          if (added) graphDirty = true;
           break;
         }
       }
     }
 
-    // Batch-merge arrays in one reactive update
-    if (newNodes.length > 0) {
-      nodes.value = [...nodes.value, ...newNodes];
-    }
-    if (newEdges.length > 0) {
-      edges.value = [...edges.value, ...newEdges];
+    // Single reactive update for entire batch
+    if (graphDirty) {
+      _flushDeferredEdges();
+      _triggerGraphReactivity();
     }
   }
 
-  function _addNode(nodeData: GraphNode) {
-    if (nodeData.id && !nodeIdSet.value.has(nodeData.id)) {
-      nodes.value.push({
-        id: nodeData.id,
-        label: nodeData.label || nodeData.id,
-        type: nodeData.type || "unknown",
-        properties: nodeData.properties || {},
-      });
-      nodeIdSet.value.add(nodeData.id);
+  // ── Graph Mutation Helpers (non-reactive, batch-friendly) ──────────
+
+  function _addNodeSafe(nodeData: GraphNode | null | undefined): boolean {
+    if (!nodeData?.id || typeof nodeData.id !== "string") return false;
+    if (nodeIdSet.has(nodeData.id)) return false;
+
+    nodeIdSet.add(nodeData.id);
+    nodes.value.push({
+      id: nodeData.id,
+      label: _safeStr(nodeData.label, nodeData.id),
+      type: _safeStr(nodeData.type, "unknown"),
+      properties: nodeData.properties || {},
+    });
+    return true;
+  }
+
+  function _addEdgeSafe(edgeData: GraphEdge | null | undefined): boolean {
+    if (!edgeData?.source || !edgeData?.target) return false;
+    if (typeof edgeData.source !== "string" || typeof edgeData.target !== "string") return false;
+
+    const key = `${edgeData.source}→${edgeData.target}→${edgeData.label || "RELATED_TO"}`;
+    if (edgeKeySet.has(key)) return false;
+
+    // Check if both endpoints exist — if not, defer the edge
+    if (!nodeIdSet.has(edgeData.source) || !nodeIdSet.has(edgeData.target)) {
+      if (deferredEdges.length < MAX_DEFERRED_EDGES) {
+        deferredEdges.push({
+          source: edgeData.source,
+          target: edgeData.target,
+          label: _safeStr(edgeData.label, "RELATED_TO"),
+          properties: edgeData.properties || {},
+        });
+      }
+      return false;
+    }
+
+    edgeKeySet.add(key);
+    edges.value.push({
+      source: edgeData.source,
+      target: edgeData.target,
+      label: _safeStr(edgeData.label, "RELATED_TO"),
+      properties: edgeData.properties || {},
+    });
+    return true;
+  }
+
+  function _flushDeferredEdges(): void {
+    if (deferredEdges.length === 0) return;
+
+    const remaining: GraphEdge[] = [];
+    for (const edge of deferredEdges) {
+      if (nodeIdSet.has(edge.source) && nodeIdSet.has(edge.target)) {
+        const key = `${edge.source}→${edge.target}→${edge.label}`;
+        if (!edgeKeySet.has(key)) {
+          edgeKeySet.add(key);
+          edges.value.push(edge);
+        }
+      } else {
+        remaining.push(edge);
+      }
+    }
+    deferredEdges.length = 0;
+    deferredEdges.push(...remaining);
+  }
+
+  // ── Throttled Reactivity Trigger ───────────────────────────────────
+
+  function _scheduleGraphFlush(): void {
+    const now = Date.now();
+    const elapsed = now - lastGraphUpdateTs;
+
+    if (elapsed >= GRAPH_UPDATE_MIN_INTERVAL) {
+      // Enough time has passed — flush immediately
+      _flushDeferredEdges();
+      _triggerGraphReactivity();
+      lastGraphUpdateTs = now;
+    } else if (!pendingGraphFlush) {
+      // Schedule a flush for later
+      const delay = GRAPH_UPDATE_MIN_INTERVAL - elapsed;
+      pendingGraphFlush = setTimeout(() => {
+        pendingGraphFlush = null;
+        _flushDeferredEdges();
+        _triggerGraphReactivity();
+        lastGraphUpdateTs = Date.now();
+      }, delay);
     }
   }
 
-  function _addEdge(edgeData: GraphEdge) {
-    if (edgeData.source && edgeData.target) {
-      edges.value.push({
-        source: edgeData.source,
-        target: edgeData.target,
-        label: edgeData.label || "RELATED_TO",
-        properties: edgeData.properties || {},
-      });
+  function _triggerGraphReactivity(): void {
+    // Trigger shallowRef reactivity without array copy
+    triggerRef(nodes);
+    triggerRef(edges);
+  }
+
+  // ── Agent Status Helpers (safe property access) ────────────────────
+
+  function _updateAgent(event: WSEvent, newStatus: string): void {
+    const agentType = event?.agent;
+    if (!agentType || !agents.value.has(agentType)) return;
+    const agent = agents.value.get(agentType)!;
+    agent.status = newStatus;
+    agents.value.set(agentType, { ...agent });
+  }
+
+  function _updateAgentComplete(event: WSEvent): void {
+    const agentType = event?.agent;
+    if (!agentType || !agents.value.has(agentType)) return;
+    const agent = agents.value.get(agentType)!;
+    agent.status = "complete";
+    agent.processingTimeMs = _safeNumber(event?.data?.processing_time_ms, 0);
+    agent.entityCount = _safeNumber(event?.data?.entities, 0);
+    agents.value.set(agentType, { ...agent });
+  }
+
+  function _updateAgentError(event: WSEvent): void {
+    const agentType = event?.agent;
+    if (!agentType || !agents.value.has(agentType)) return;
+    const agent = agents.value.get(agentType)!;
+    agent.status = "error";
+    agent.error = _safeStr(event?.data?.error, "Unknown error");
+    agents.value.set(agentType, { ...agent });
+  }
+
+  // ── Safe Type Helpers ──────────────────────────────────────────────
+
+  function _safeStr(val: unknown, fallback: string = ""): string {
+    if (typeof val === "string") return val;
+    if (val == null) return fallback;
+    return String(val);
+  }
+
+  function _safeNumber(val: unknown, fallback: number = 0): number {
+    if (typeof val === "number" && !isNaN(val)) return val;
+    if (typeof val === "string") {
+      const parsed = parseFloat(val);
+      if (!isNaN(parsed)) return parsed;
     }
+    return fallback;
   }
 
   function setError(msg: string) {
@@ -298,7 +380,14 @@ export const useAnalysisStore = defineStore("analysis", () => {
     edges.value = [];
     eventLog.value = [];
     isConnected.value = false;
-    nodeIdSet.value.clear();
+    nodeIdSet.clear();
+    edgeKeySet.clear();
+    deferredEdges.length = 0;
+    lastGraphUpdateTs = 0;
+    if (pendingGraphFlush) {
+      clearTimeout(pendingGraphFlush);
+      pendingGraphFlush = null;
+    }
   }
 
   return {

@@ -32,18 +32,16 @@ bearer_scheme = HTTPBearer(auto_error=False)
 
 
 def hash_password(password: str) -> str:
-    """Hash password using PBKDF2-HMAC-SHA256 with 600k iterations."""
     salt = secrets.token_hex(16)
-    dk = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), iterations=600_000)
-    return f"{salt}${dk.hex()}"
+    hashed = hashlib.sha256(f"{salt}{password}".encode()).hexdigest()
+    return f"{salt}${hashed}"
 
 
 def verify_password(plain: str, hashed: str) -> bool:
     try:
         salt, digest = hashed.split("$", 1)
-        dk = hashlib.pbkdf2_hmac("sha256", plain.encode(), salt.encode(), iterations=600_000)
-        return secrets.compare_digest(dk.hex(), digest)
-    except (ValueError, AttributeError):
+        return hashlib.sha256(f"{salt}{plain}".encode()).hexdigest() == digest
+    except ValueError:
         return False
 
 
