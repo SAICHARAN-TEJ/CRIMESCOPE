@@ -3,6 +3,8 @@ CrimeScope — Centralized Configuration via Pydantic Settings.
 
 Reads from environment variables (or .env file).
 All secrets are validated at startup.
+
+v4.2: Added chaos engineering and forensic stress-test configuration.
 """
 
 from __future__ import annotations
@@ -55,6 +57,17 @@ class Settings(BaseSettings):
     # ── FFmpeg / Whisper ───────────────────────────────────────────────
     whisper_model: str = "base"
     max_video_duration_seconds: int = 600
+
+    # ── Chaos Engineering ──────────────────────────────────────────────
+    enable_chaos_mode: bool = False
+    chaos_failure_rate: float = 0.03       # 3% chance of injected failure
+    chaos_max_delay_ms: int = 2000         # Max artificial delay in ms
+    chaos_drop_rate: float = 0.01          # 1% chance of dropped result
+
+    # ── Forensic Stress Test ───────────────────────────────────────────
+    stress_test_node_count: int = 1024     # Nodes to create during stress test
+    stress_test_edge_count: int = 2048     # Edges to create during stress test
+    stress_test_ws_events: int = 500       # WS events to generate
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
 

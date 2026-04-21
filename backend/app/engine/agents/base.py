@@ -1,30 +1,54 @@
 """
-CrimeScope — Abstract Agent Base with Circuit Breaker Pattern.
+CrimeScope — Abstract Agent Base with Circuit Breaker + Chaos Engineering.
 
 All agents inherit from BaseAgent which provides:
   1. Circuit Breaker — fails fast after N consecutive errors
-  2. Structured event publishing to Redis
-  3. Timing instrumentation
-  4. Graceful error reporting (agent failure doesn't crash pipeline)
+  2. Chaos Injector — controlled failure injection for resilience testing
+  3. Guardian Pattern — validate_input() / validate_output() hooks
+  4. Automatic retry with exponential backoff (max 3 attempts)
+  5. Dead Letter Queue — failed jobs pushed to Redis for recovery
+  6. Structured event publishing to Redis
+  7. Timing instrumentation
 
-Circuit Breaker states:
-  CLOSED  → Normal operation. Errors increment counter.
-  OPEN    → After `failure_threshold` errors, reject immediately for `recovery_timeout` seconds.
-  HALF_OPEN → After timeout, allow one probe request. Success → CLOSED, Failure → OPEN.
+v4.2: Added @chaos_injector, Guardian pattern, retry logic, DLQ.
 """
 
 from __future__ import annotations
 
+import asyncio
+import functools
+import random
 import time
 from abc import ABC, abstractmethod
 from enum import Enum
 from typing import Any
 
+from app.core.config import get_settings
 from app.core.logger import get_logger
 from app.core.redis_client import get_redis
 from app.schemas.events import AgentResult, AgentType, EventType, WSEvent
 
 logger = get_logger("crimescope.agent.base")
+
+
+# ── Custom Exceptions ─────────────────────────────────────────────────────
+
+
+class DataIntegrityError(Exception):
+    """Raised when an agent's output fails validation (Guardian pattern)."""
+
+    def __init__(self, agent: str, message: str, recoverable: bool = True):
+        self.agent = agent
+        self.recoverable = recoverable
+        super().__init__(f"[{agent}] DataIntegrityError: {message}")
+
+
+class ChaosError(Exception):
+    """Injected failure for resilience testing (only in chaos mode)."""
+    pass
+
+
+# ── Circuit Breaker ───────────────────────────────────────────────────────
 
 
 class CircuitState(str, Enum):
@@ -82,29 +106,149 @@ class CircuitBreaker:
             )
 
 
+# ── Chaos Injector Decorator ──────────────────────────────────────────────
+
+
+def chaos_injector(func):
+    """
+    Decorator that injects controlled failures when ENABLE_CHAOS_MODE is True.
+
+    Effects (probabilistic):
+      - Random delay (1-5% chance, up to chaos_max_delay_ms)
+      - Random exception (chaos_failure_rate chance)
+      - Random result drop (chaos_drop_rate chance → returns None)
+
+    Usage:
+        @chaos_injector
+        async def _execute(self, job_id, payload):
+            ...
+    """
+    @functools.wraps(func)
+    async def wrapper(*args, **kwargs):
+        settings = get_settings()
+        if not settings.enable_chaos_mode:
+            return await func(*args, **kwargs)
+
+        # ── Inject random delay ──────────────────────────────────
+        if random.random() < 0.05:
+            delay = random.randint(100, settings.chaos_max_delay_ms) / 1000
+            logger.warning(f"🔥 CHAOS: Injecting {delay:.2f}s delay into {func.__qualname__}")
+            await asyncio.sleep(delay)
+
+        # ── Inject random failure ────────────────────────────────
+        if random.random() < settings.chaos_failure_rate:
+            logger.warning(f"🔥 CHAOS: Injecting failure into {func.__qualname__}")
+            raise ChaosError(f"Chaos-injected failure in {func.__qualname__}")
+
+        result = await func(*args, **kwargs)
+
+        # ── Inject result drop ───────────────────────────────────
+        if random.random() < settings.chaos_drop_rate:
+            logger.warning(f"🔥 CHAOS: Dropping result from {func.__qualname__}")
+            return None
+
+        return result
+
+    return wrapper
+
+
+# ── Dead Letter Queue ─────────────────────────────────────────────────────
+
+
+async def _push_to_dead_letter(job_id: str, agent_name: str, error: str) -> None:
+    """Push failed job to Redis dead letter queue for manual recovery."""
+    try:
+        import json
+        redis = get_redis()
+        entry = json.dumps({
+            "job_id": job_id,
+            "agent": agent_name,
+            "error": error,
+            "timestamp": time.time(),
+            "recoverable": True,
+        })
+        await redis.client.lpush("crimescope:failed_jobs", entry)
+        await redis.client.ltrim("crimescope:failed_jobs", 0, 9999)
+        logger.info(f"Pushed failed job {job_id}/{agent_name} to dead letter queue")
+    except Exception as e:
+        logger.error(f"Failed to push to DLQ: {e}")
+
+
+# ── Base Agent ────────────────────────────────────────────────────────────
+
+
 class BaseAgent(ABC):
     """
     Abstract base for all CrimeScope agents.
 
-    Subclasses implement `_execute()` with their domain logic.
-    The base class handles circuit breaking, timing, and event publishing.
+    Subclasses implement:
+      - _execute() — domain logic
+      - validate_input() — Guardian input check (optional override)
+      - validate_output() — Guardian output check (optional override)
+
+    The base class handles:
+      - Circuit breaking with automatic retry (3 attempts, exponential backoff)
+      - Chaos injection (when enabled)
+      - Input/output validation (Guardian pattern)
+      - Dead letter queue on permanent failure
+      - Timing and event publishing
     """
 
     agent_type: AgentType = AgentType.SUPERVISOR
     agent_name: str = "base"
+    max_retries: int = 3
+    retry_backoff_base: float = 1.0  # seconds
 
     def __init__(self) -> None:
         self.circuit = CircuitBreaker(failure_threshold=3, recovery_timeout=30.0)
 
+    def validate_input(self, job_id: str, payload: dict[str, Any]) -> None:
+        """
+        Guardian input validation. Override in subclasses for domain-specific checks.
+        Raise DataIntegrityError if input is invalid.
+        """
+        if not job_id or not isinstance(job_id, str):
+            raise DataIntegrityError(self.agent_name, "job_id is empty or invalid")
+        if not isinstance(payload, dict):
+            raise DataIntegrityError(self.agent_name, "payload must be a dict")
+
+    def validate_output(self, result: AgentResult) -> None:
+        """
+        Guardian output validation. Override in subclasses for domain-specific checks.
+        Raise DataIntegrityError if output schema is invalid.
+        """
+        if not isinstance(result, AgentResult):
+            raise DataIntegrityError(self.agent_name, f"Expected AgentResult, got {type(result).__name__}")
+        if result.success and result.error:
+            logger.warning(f"{self.agent_name}: result marked success but has error: {result.error}")
+
     async def run(self, job_id: str, payload: dict[str, Any]) -> AgentResult:
         """
-        Execute the agent with circuit breaker protection.
+        Execute the agent with circuit breaker, retry, and Guardian validation.
 
         This is the PUBLIC entry point called by the Supervisor.
+        Implements: Input Guard → Retry Loop → Chaos → Execute → Output Guard → DLQ
         """
         redis = get_redis()
 
-        # Circuit breaker check
+        # ── Input Guard ──────────────────────────────────────────────
+        try:
+            self.validate_input(job_id, payload)
+        except DataIntegrityError as e:
+            logger.error(f"Input validation failed: {e}")
+            await redis.publish_event(job_id, WSEvent(
+                event=EventType.AGENT_ERROR,
+                job_id=job_id,
+                agent=self.agent_type,
+                data={"error": str(e), "recoverable": e.recoverable},
+            ).model_dump())
+            return AgentResult(
+                agent=self.agent_type,
+                success=False,
+                error=str(e),
+            )
+
+        # ── Circuit breaker check ────────────────────────────────────
         if not self.circuit.can_execute():
             error_msg = f"{self.agent_name} circuit breaker OPEN — skipping"
             logger.warning(error_msg)
@@ -120,7 +264,7 @@ class BaseAgent(ABC):
                 error=error_msg,
             )
 
-        # Publish start event
+        # ── Publish start event ──────────────────────────────────────
         await redis.publish_event(job_id, WSEvent(
             event=EventType.AGENT_START,
             job_id=job_id,
@@ -128,52 +272,106 @@ class BaseAgent(ABC):
             data={"agent_name": self.agent_name},
         ).model_dump())
 
+        # ── Retry loop with exponential backoff ──────────────────────
+        last_error: Exception | None = None
         start = time.time()
-        try:
-            result = await self._execute(job_id, payload)
-            elapsed = (time.time() - start) * 1000
-            result.processing_time_ms = elapsed
-            self.circuit.record_success()
 
-            # Publish completion
-            await redis.publish_event(job_id, WSEvent(
-                event=EventType.AGENT_COMPLETE,
-                job_id=job_id,
-                agent=self.agent_type,
-                data={
-                    "agent_name": self.agent_name,
-                    "processing_time_ms": elapsed,
-                    "entities": len(result.entities),
-                    "relationships": len(result.relationships),
-                },
-            ).model_dump())
+        for attempt in range(1, self.max_retries + 1):
+            try:
+                result = await self._execute(job_id, payload)
 
-            logger.info(
-                f"{self.agent_name} complete: {len(result.entities)} entities, "
-                f"{len(result.relationships)} rels ({elapsed:.0f}ms)"
-            )
-            return result
+                # Handle chaos-dropped results (returned None)
+                if result is None:
+                    raise DataIntegrityError(
+                        self.agent_name, "Agent returned None (possible chaos drop)"
+                    )
 
-        except Exception as e:
-            elapsed = (time.time() - start) * 1000
-            self.circuit.record_failure()
+                # ── Output Guard ─────────────────────────────────────
+                self.validate_output(result)
 
-            error_msg = f"{self.agent_name} failed: {e}"
-            logger.error(error_msg, exc_info=True)
+                elapsed = (time.time() - start) * 1000
+                result.processing_time_ms = elapsed
+                self.circuit.record_success()
 
-            await redis.publish_event(job_id, WSEvent(
-                event=EventType.AGENT_ERROR,
-                job_id=job_id,
-                agent=self.agent_type,
-                data={"error": str(e), "processing_time_ms": elapsed},
-            ).model_dump())
+                # Publish completion
+                await redis.publish_event(job_id, WSEvent(
+                    event=EventType.AGENT_COMPLETE,
+                    job_id=job_id,
+                    agent=self.agent_type,
+                    data={
+                        "agent_name": self.agent_name,
+                        "processing_time_ms": elapsed,
+                        "entities": len(result.entities),
+                        "relationships": len(result.relationships),
+                        "attempt": attempt,
+                    },
+                ).model_dump())
 
-            return AgentResult(
-                agent=self.agent_type,
-                success=False,
-                processing_time_ms=elapsed,
-                error=str(e),
-            )
+                if attempt > 1:
+                    logger.info(f"{self.agent_name} succeeded on attempt {attempt}")
+
+                logger.info(
+                    f"{self.agent_name} complete: {len(result.entities)} entities, "
+                    f"{len(result.relationships)} rels ({elapsed:.0f}ms)"
+                )
+                return result
+
+            except ChaosError as e:
+                last_error = e
+                logger.warning(f"{self.agent_name} chaos failure (attempt {attempt}/{self.max_retries})")
+                # Always retry chaos failures
+                if attempt < self.max_retries:
+                    await asyncio.sleep(self.retry_backoff_base * (2 ** (attempt - 1)))
+                continue
+
+            except DataIntegrityError as e:
+                last_error = e
+                logger.error(f"{self.agent_name} data integrity error: {e}")
+                # Don't retry data integrity errors — they won't self-resolve
+                break
+
+            except Exception as e:
+                last_error = e
+                logger.error(
+                    f"{self.agent_name} attempt {attempt}/{self.max_retries} "
+                    f"failed: {type(e).__name__}: {e}"
+                )
+                if attempt < self.max_retries:
+                    wait = self.retry_backoff_base * (2 ** (attempt - 1))
+                    logger.info(f"{self.agent_name} retrying in {wait:.1f}s...")
+                    await asyncio.sleep(wait)
+
+        # ── All retries exhausted → Dead Letter Queue ────────────────
+        elapsed = (time.time() - start) * 1000
+        self.circuit.record_failure()
+
+        error_msg = f"{self.agent_name} failed after {self.max_retries} attempts: {last_error}"
+        logger.error(error_msg)
+
+        # Push to dead letter queue
+        await _push_to_dead_letter(job_id, self.agent_name, str(last_error))
+
+        # Notify frontend with recoverable flag
+        recoverable = isinstance(last_error, (ChaosError, TimeoutError, OSError))
+        await redis.publish_event(job_id, WSEvent(
+            event=EventType.AGENT_ERROR,
+            job_id=job_id,
+            agent=self.agent_type,
+            data={
+                "error": str(last_error),
+                "processing_time_ms": elapsed,
+                "attempts": self.max_retries,
+                "recoverable": recoverable,
+                "type": "AGENT_FAILED",
+            },
+        ).model_dump())
+
+        return AgentResult(
+            agent=self.agent_type,
+            success=False,
+            processing_time_ms=elapsed,
+            error=error_msg,
+        )
 
     @abstractmethod
     async def _execute(self, job_id: str, payload: dict[str, Any]) -> AgentResult:

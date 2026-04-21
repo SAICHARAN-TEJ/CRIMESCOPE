@@ -1,17 +1,17 @@
 """
-CrimeScope — Video Agent (Antigravity-Hardened).
+CrimeScope — Video Agent (Antigravity-Hardened + Guardian Pattern).
 
 Processes video files using:
   1. FFmpeg for audio extraction (CPU-bound → ProcessPoolExecutor)
   2. Whisper for speech-to-text transcription
   3. Keyframe extraction for visual evidence
 
-Hardened against:
-  - Corrupt/truncated video streams (FFmpeg stderr validation)
-  - 0-byte / silent audio tracks (size + duration gating)
-  - Unicode / special-char filenames (sanitized before disk write)
-  - 10GB+ files (streaming download with size cap, no full-memory load)
-  - ProcessPool pickling failures (only primitives cross process boundary)
+v4.2 Hardening:
+  - Guardian Input: File existence, size (0B–2GB), format validation
+  - Guardian Output: Transcript non-empty check
+  - Chaos injection: Random delays/failures under chaos mode
+  - Per-frame error isolation: Corrupt frames skipped with warning
+  - Automatic retry via BaseAgent (3 attempts)
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ from typing import Any
 
 from app.core.config import get_settings
 from app.core.logger import get_logger
-from app.engine.agents.base import BaseAgent
+from app.engine.agents.base import BaseAgent, DataIntegrityError, chaos_injector
 from app.schemas.events import AgentResult, AgentType
 from app.storage.minio_client import get_minio
 
@@ -42,6 +42,7 @@ MAX_VIDEO_SIZE_BYTES = 2 * 1024 * 1024 * 1024  # 2GB hard cap
 MIN_AUDIO_SIZE_BYTES = 4096                      # Below this, audio is empty/corrupt
 FFMPEG_TIMEOUT = 180                             # 3 minutes per FFmpeg call
 WHISPER_TIMEOUT = 300                            # 5 minutes per transcription
+ALLOWED_VIDEO_EXTENSIONS = {".mp4", ".avi", ".mov", ".mkv", ".webm", ".wmv", ".flv"}
 
 # Characters allowed in sanitized filenames
 _SAFE_FILENAME_RE = re.compile(r"[^a-zA-Z0-9._-]")
@@ -96,9 +97,6 @@ def _extract_audio_sync(video_path: str, audio_path: str) -> dict[str, Any]:
     """
     CPU-bound FFmpeg call — runs in ProcessPoolExecutor.
     Extracts audio track from video file.
-
-    Returns dict (not bool) so errors propagate cleanly across process boundary.
-    All arguments are primitives (str) — guaranteed picklable.
     """
     try:
         cmd = [
@@ -135,7 +133,6 @@ def _extract_audio_sync(video_path: str, audio_path: str) -> dict[str, Any]:
 def _transcribe_sync(audio_path: str, model_name: str) -> dict[str, Any]:
     """
     CPU-bound Whisper transcription — runs in ProcessPoolExecutor.
-
     Only str arguments cross the process boundary (picklable).
     """
     try:
@@ -156,6 +153,7 @@ def _transcribe_sync(audio_path: str, model_name: str) -> dict[str, Any]:
                     "text": str(s.get("text", "")).strip(),
                 })
             except (TypeError, ValueError):
+                # Skip corrupt segment — don't crash entire transcription
                 continue
 
         return {"text": text, "segments": segments, "error": ""}
@@ -171,21 +169,52 @@ class VideoAgent(BaseAgent):
     Processes video evidence: extract audio → transcribe → extract keyframes.
     CPU-bound work is offloaded to ProcessPoolExecutor.
 
-    Hardened against:
-      - Corrupt streams, 0-byte segments, Unicode filenames
-      - 10GB files (streaming download with 2GB cap)
-      - ProcessPool serialization failures
+    Guardian Pattern:
+      - Input: Validates file list is non-empty, content types are video
+      - Output: Ensures at least a fact is produced per file
     """
 
     agent_type = AgentType.VIDEO
     agent_name = "video_agent"
 
+    # ── Guardian: Input Validation ────────────────────────────────────
+
+    def validate_input(self, job_id: str, payload: dict[str, Any]) -> None:
+        """Validate video processing inputs."""
+        super().validate_input(job_id, payload)
+
+        files = payload.get("files")
+        if files is not None and not isinstance(files, list):
+            raise DataIntegrityError(self.agent_name, "files must be a list")
+
+        # Validate individual file entries
+        for f in (files or []):
+            if not isinstance(f, dict):
+                raise DataIntegrityError(self.agent_name, f"File entry must be a dict, got {type(f).__name__}")
+            if not f.get("object_key") and not f.get("filename"):
+                raise DataIntegrityError(self.agent_name, "File entry missing object_key and filename")
+
+    # ── Guardian: Output Validation ───────────────────────────────────
+
+    def validate_output(self, result: AgentResult) -> None:
+        """Validate video processing outputs."""
+        super().validate_output(result)
+        if result.success and not result.facts:
+            raise DataIntegrityError(
+                self.agent_name,
+                "Video agent returned success but produced no facts",
+                recoverable=False,
+            )
+
+    # ── Core Execution (with chaos injection) ─────────────────────────
+
+    @chaos_injector
     async def _execute(self, job_id: str, payload: dict[str, Any]) -> AgentResult:
         files = payload.get("files", [])
         video_files = [
             f for f in files
             if f.get("content_type", "").startswith("video/")
-               or f.get("filename", "").lower().endswith((".mp4", ".avi", ".mov", ".mkv", ".webm"))
+               or f.get("filename", "").lower().endswith(tuple(ALLOWED_VIDEO_EXTENSIONS))
         ]
 
         if not video_files:
@@ -210,6 +239,12 @@ class VideoAgent(BaseAgent):
             raw_filename = vf.get("filename", f"video_{i}.mp4")
             filename = _sanitize_filename(raw_filename)
 
+            # ── Input Guard: Validate file extension ──────────────────
+            ext = Path(filename).suffix.lower()
+            if ext and ext not in ALLOWED_VIDEO_EXTENSIONS:
+                all_facts.append(f"⚠ Skipped {filename}: unsupported format '{ext}'")
+                continue
+
             video_path: str | None = None
             audio_path: str | None = None
 
@@ -217,16 +252,20 @@ class VideoAgent(BaseAgent):
                 # ── Size check before download (prevents 10GB OOM) ────
                 try:
                     stat = minio.stat_object(object_key)
-                    if stat and hasattr(stat, "size") and stat.size > MAX_VIDEO_SIZE_BYTES:
-                        all_facts.append(
-                            f"⚠ Skipped {filename}: {stat.size / 1e9:.1f}GB exceeds "
-                            f"{MAX_VIDEO_SIZE_BYTES / 1e9:.0f}GB limit"
-                        )
-                        continue
+                    if stat and hasattr(stat, "size"):
+                        if stat.size == 0:
+                            all_facts.append(f"⚠ Skipped {filename}: 0-byte file")
+                            continue
+                        if stat.size > MAX_VIDEO_SIZE_BYTES:
+                            all_facts.append(
+                                f"⚠ Skipped {filename}: {stat.size / 1e9:.1f}GB exceeds "
+                                f"{MAX_VIDEO_SIZE_BYTES / 1e9:.0f}GB limit"
+                            )
+                            continue
                 except Exception:
                     pass  # stat unavailable — proceed with download, cap handled below
 
-                # ── Streaming download to disk (never load full file into RAM) ──
+                # ── Streaming download to disk ────────────────────────
                 with tempfile.NamedTemporaryFile(
                     suffix=Path(filename).suffix or ".mp4",
                     delete=False,
@@ -246,7 +285,6 @@ class VideoAgent(BaseAgent):
                                 break
                             tmp_video.write(chunk)
                     except AttributeError:
-                        # Fallback: minio client doesn't have streaming — use bytes
                         video_bytes = minio.get_object_bytes(object_key)
                         if not video_bytes:
                             all_facts.append(f"⚠ Could not download {filename}")
@@ -257,19 +295,17 @@ class VideoAgent(BaseAgent):
                         tmp_video.write(video_bytes)
                         bytes_written = len(video_bytes)
 
+                # ── Input Guard: Validate downloaded file ─────────────
                 if bytes_written == 0:
                     all_facts.append(f"⚠ {filename} is a 0-byte file")
                     continue
 
-                # ── Validate video integrity with ffprobe ─────────────
+                # Validate video integrity with ffprobe
                 probe = await loop.run_in_executor(
-                    None,
-                    _validate_video_file,
-                    video_path,
+                    None, _validate_video_file, video_path,
                 )
                 if not probe["valid"]:
                     all_facts.append(f"⚠ {filename} failed validation: {probe['error']}")
-                    # Still try audio extraction — some "corrupt" files have valid audio
                     all_transcripts.append({
                         "video_index": i,
                         "filename": filename,
@@ -278,17 +314,15 @@ class VideoAgent(BaseAgent):
                     })
                     continue
 
-                # ── Audio extraction path ─────────────────────────────
+                # ── Audio extraction ──────────────────────────────────
                 audio_path = video_path + ".wav"
 
-                # FFmpeg extraction — CPU-bound, purely string args (picklable)
                 extract_result = await loop.run_in_executor(
                     _process_pool,
                     partial(_extract_audio_sync, video_path, audio_path),
                 )
 
                 if extract_result["success"]:
-                    # Whisper transcription — CPU-bound, str args only
                     transcript = await loop.run_in_executor(
                         _process_pool,
                         partial(_transcribe_sync, audio_path, whisper_model),
@@ -310,6 +344,13 @@ class VideoAgent(BaseAgent):
                         f"Transcribed {filename}: {seg_count} segments, "
                         f"{len(text)} chars"
                     )
+
+                    # ── Output Guard: Check transcript not empty when audio exists ──
+                    if not text.strip() and extract_result.get("audio_size", 0) > MIN_AUDIO_SIZE_BYTES * 10:
+                        all_facts.append(
+                            f"⚠ {filename}: Audio extracted ({extract_result.get('audio_size', 0)}B) "
+                            f"but transcript is empty — possible Whisper failure"
+                        )
 
                     # Store text chunks for downstream entity extraction
                     if text.strip():
