@@ -8,6 +8,8 @@ build/
 *.egg
 .pytest_cache/
 .ruff_cache/
+.mypy_cache/
+*.pyo
 
 # ── Node ──────────────────────────────────────────────────────────────
 node_modules/
@@ -23,6 +25,7 @@ frontend/dist/
 .idea/
 *.swp
 *.swo
+*.code-workspace
 
 # ── Docker ────────────────────────────────────────────────────────────
 docker-compose.override.yml
@@ -30,8 +33,19 @@ docker-compose.override.yml
 # ── OS ────────────────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
+Desktop.ini
 
 # ── Logs & Data ───────────────────────────────────────────────────────
 logs/
 *.log
 data/
+
+# ── MinIO / Object Storage ───────────────────────────────────────────
+minio-data/
+
+# ── Neo4j local volumes ──────────────────────────────────────────────
+neo4j-data/
+
+# ── Celery ────────────────────────────────────────────────────────────
+celerybeat-schedule
+celerybeat.pid
