@@ -154,24 +154,53 @@ def chaos_injector(func):
 
 # ── Dead Letter Queue ─────────────────────────────────────────────────────
 
+# In-memory DLQ fallback when Redis is unavailable (capped at 10000 entries)
+_inmemory_dlq: list[dict] = []
+_DLQ_MAX = 10000
+
+
+def get_inmemory_dlq() -> list[dict]:
+    """Return the in-memory DLQ entries (for testing and debug endpoints)."""
+    return list(_inmemory_dlq)
+
+
+def clear_inmemory_dlq() -> None:
+    """Clear the in-memory DLQ (for testing)."""
+    _inmemory_dlq.clear()
+
 
 async def _push_to_dead_letter(job_id: str, agent_name: str, error: str) -> None:
-    """Push failed job to Redis dead letter queue for manual recovery."""
+    """Push failed job to Redis dead letter queue (falls back to in-memory)."""
+    import json as _json
+
+    entry_dict = {
+        "job_id": job_id,
+        "agent": agent_name,
+        "error": error,
+        "timestamp": time.time(),
+        "recoverable": True,
+    }
+    entry_json = _json.dumps(entry_dict)
+
+    # Try Redis first
     try:
-        import json
         redis = get_redis()
-        entry = json.dumps({
-            "job_id": job_id,
-            "agent": agent_name,
-            "error": error,
-            "timestamp": time.time(),
-            "recoverable": True,
-        })
-        await redis.client.lpush("crimescope:failed_jobs", entry)
-        await redis.client.ltrim("crimescope:failed_jobs", 0, 9999)
-        logger.info(f"Pushed failed job {job_id}/{agent_name} to dead letter queue")
+        if redis.connected:
+            await redis.client.lpush("crimescope:failed_jobs", entry_json)
+            await redis.client.ltrim("crimescope:failed_jobs", 0, 9999)
+            logger.info(f"Pushed failed job {job_id}/{agent_name} to Redis DLQ")
+            return
     except Exception as e:
-        logger.error(f"Failed to push to DLQ: {e}")
+        logger.warning(f"Redis DLQ unavailable: {e} — using in-memory fallback")
+
+    # In-memory fallback
+    _inmemory_dlq.append(entry_dict)
+    if len(_inmemory_dlq) > _DLQ_MAX:
+        _inmemory_dlq.pop(0)  # Drop oldest
+    logger.info(
+        f"Pushed failed job {job_id}/{agent_name} to in-memory DLQ "
+        f"({len(_inmemory_dlq)} entries)"
+    )
 
 
 # ── Base Agent ────────────────────────────────────────────────────────────
