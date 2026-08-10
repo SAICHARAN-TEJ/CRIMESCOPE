@@ -15,7 +15,7 @@ class TestEnums:
 
         assert EventType.JOB_STARTED == "JOB_STARTED"
         assert EventType.PIPELINE_COMPLETE == "PIPELINE_COMPLETE"
-        assert len(EventType) == 9
+        assert len(EventType) == 14
 
     def test_job_status(self):
         from app.schemas.events import JobStatus

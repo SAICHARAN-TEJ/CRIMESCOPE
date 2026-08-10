@@ -22,8 +22,8 @@ COPY --from=builder /install /usr/local
 RUN groupadd -r crimescope && useradd -r -g crimescope crimescope
 WORKDIR /opt/app
 COPY . .
-RUN chown -R crimescope:crimescope /opt/app
+RUN chown -R crimescope:crimescope /opt/app && chmod +x /opt/app/entrypoint.sh
 USER crimescope
 
 EXPOSE 8000
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
+ENTRYPOINT ["/opt/app/entrypoint.sh"]

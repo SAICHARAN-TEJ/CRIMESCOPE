@@ -22,10 +22,13 @@ import asyncio
 import time
 from typing import Any
 
+from app.core.config import get_settings
 from app.core.logger import get_logger
 from app.core.redis_client import get_redis
 from app.engine.agents.entity import EntityAgent
 from app.engine.agents.graph import GraphAgent
+from app.engine.agents.persona import PersonaAgent, get_default_personas
+from app.engine.agents.consensus import ConsensusEntityExtractor
 from app.schemas.events import (
     AgentResult, AgentType, EventType, JobStatus, PipelineResult, WSEvent,
 )
@@ -50,6 +53,7 @@ class Supervisor:
     def __init__(self) -> None:
         self.entity_agent = EntityAgent()
         self.graph_agent = GraphAgent()
+        self.consensus_agent = ConsensusEntityExtractor()
 
     async def run(self, job_id: str, files: list[dict[str, Any]], question: str = "") -> PipelineResult:
         """
@@ -98,13 +102,30 @@ class Supervisor:
 
         logger.info(f"[Supervisor] Phase 1 complete: {len(text_chunks)} text chunks collected")
 
-        # ── Phase 2: Entity extraction (depends on Phase 1 text) ─────
-        logger.info(f"[Supervisor] Phase 2: Entity extraction ({len(text_chunks)} chunks)")
+        # ── Phase 2: Entity extraction via consensus swarm ─────────────
+        # Run the parallel consensus layer (N EntityAgents → majority vote)
+        # in front of graph merges. Falls back to a single extractor if the
+        # swarm cannot reach quorum — disagreement is a confidence signal.
+        logger.info(f"[Supervisor] Phase 2: Consensus entity extraction ({len(text_chunks)} chunks)")
 
         entity_payload = {**payload, "text_chunks": text_chunks}
-        entity_result = await self._run_with_timeout(
-            "entity", self.entity_agent, job_id, entity_payload,
-        )
+        if text_chunks:
+            entity_result = await self._run_with_timeout(
+                "consensus", self.consensus_agent, job_id, entity_payload,
+            )
+            if not entity_result.success:
+                # Degrade to single-agent extraction — never fail the job
+                # over consensus quorum.
+                logger.warning(
+                    "[Supervisor] Consensus failed, degrading to single EntityAgent"
+                )
+                entity_result = await self._run_with_timeout(
+                    "entity", self.entity_agent, job_id, entity_payload,
+                )
+        else:
+            entity_result = await self._run_with_timeout(
+                "entity", self.entity_agent, job_id, entity_payload,
+            )
         agent_results.append(entity_result)
 
         # ── Phase 3: Graph writing via write-behind buffer ───────────
@@ -125,6 +146,26 @@ class Supervisor:
             "graph", self.graph_agent, job_id, graph_payload,
         )
         agent_results.append(graph_result)
+
+        # ── Phase 4: Persona Analysis (parallel, non-blocking) ────────
+        settings = get_settings()
+        if all_entities:  # Only run if we have entities to analyze
+            logger.info(
+                f"[Supervisor] Phase 4: Persona analysis "
+                f"({settings.max_personas} personas, {len(all_entities)} entities)"
+            )
+            try:
+                persona_results = await self._run_persona_analysis(
+                    job_id, entity_payload, all_entities, settings
+                )
+                agent_results.extend(persona_results)
+            except Exception as e:
+                logger.error(f"[Supervisor] Phase 4 (personas) failed: {e}", exc_info=True)
+                agent_results.append(AgentResult(
+                    agent=AgentType.PERSONA,
+                    success=False,
+                    error=f"Persona analysis failed: {e}",
+                ))
 
         # ── Aggregate results ────────────────────────────────────────
         elapsed = (time.time() - start) * 1000
@@ -350,12 +391,14 @@ class Supervisor:
                 )
                 results.append(result)
             except asyncio.TimeoutError:
+                await self._publish_agent_error(job_id, agent.agent_type, f"{name} timed out (in-process fallback)")
                 results.append(AgentResult(
                     agent=agent.agent_type,
                     success=False,
                     error=f"{name} timed out (in-process fallback)",
                 ))
             except Exception as e:
+                await self._publish_agent_error(job_id, agent.agent_type, f"{name} crashed: {e}")
                 results.append(AgentResult(
                     agent=agent.agent_type,
                     success=False,
@@ -374,7 +417,12 @@ class Supervisor:
         job_id: str,
         payload: dict[str, Any],
     ) -> AgentResult:
-        """Run an async agent with timeout protection."""
+        """Run an async agent with timeout protection.
+
+        Supervisor-level failures (timeout/crash) publish an AGENT_ERROR
+        event so the frontend always sees why an agent did not complete —
+        the agent's own handler may be cancelled before it can publish.
+        """
         try:
             return await asyncio.wait_for(
                 agent.run(job_id, payload),
@@ -382,6 +430,7 @@ class Supervisor:
             )
         except asyncio.TimeoutError:
             logger.warning(f"Agent {name} timed out after {AGENT_TIMEOUT}s")
+            await self._publish_agent_error(job_id, agent.agent_type, f"{name} timed out after {AGENT_TIMEOUT}s")
             return AgentResult(
                 agent=agent.agent_type,
                 success=False,
@@ -389,8 +438,74 @@ class Supervisor:
             )
         except Exception as e:
             logger.error(f"Agent {name} crashed: {e}", exc_info=True)
+            await self._publish_agent_error(job_id, agent.agent_type, f"{name} crashed: {e}")
             return AgentResult(
                 agent=agent.agent_type,
                 success=False,
                 error=str(e),
             )
+
+    async def _publish_agent_error(self, job_id: str, agent_type: AgentType, message: str) -> None:
+        """Best-effort AGENT_ERROR event — never raises (Redis may be down)."""
+        try:
+            redis = get_redis()
+            await redis.publish_event(job_id, WSEvent(
+                event=EventType.AGENT_ERROR,
+                job_id=job_id,
+                agent=agent_type,
+                data={"error": message, "recoverable": True, "type": "AGENT_FAILED"},
+            ).model_dump())
+        except Exception as e:
+            logger.warning(f"Failed to publish AGENT_ERROR for {job_id}: {e}")
+
+    async def _run_persona_analysis(
+        self,
+        job_id: str,
+        base_payload: dict[str, Any],
+        entities: list[dict[str, Any]],
+        settings: Any,
+    ) -> list[AgentResult]:
+        """
+        Run persona agents in parallel with concurrency limit.
+
+        Each persona analyzes the case from their expert perspective.
+        Failures are isolated — one persona crashing doesn't affect others.
+        """
+        personas = get_default_personas()[:settings.max_personas]
+        persona_payload = {
+            **base_payload,
+            "entities": entities,
+        }
+
+        # Create agents and run with concurrency limit
+        semaphore = asyncio.Semaphore(settings.max_personas)
+
+        async def _run_one(persona_config):
+            async with semaphore:
+                agent = PersonaAgent(persona=persona_config)
+                return await self._run_with_timeout(
+                    f"persona_{persona_config.name}",
+                    agent,
+                    job_id,
+                    persona_payload,
+                )
+
+        tasks = [_run_one(p) for p in personas]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        agent_results: list[AgentResult] = []
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                logger.warning(
+                    f"[Supervisor] Persona {personas[i].name} crashed: {result}"
+                )
+                agent_results.append(AgentResult(
+                    agent=AgentType.PERSONA,
+                    success=False,
+                    error=f"Persona {personas[i].name} failed: {result}",
+                ))
+            elif isinstance(result, AgentResult):
+                agent_results.append(result)
+
+        return agent_results
+

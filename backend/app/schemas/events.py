@@ -24,6 +24,10 @@ class AgentType(str, Enum):
     ENTITY = "entity"
     GRAPH = "graph"
     SUPERVISOR = "supervisor"
+    PERSONA = "persona"
+    REPORT = "report"
+    CONSENSUS = "consensus"
+    SCENARIO = "scenario"
 
 
 class EventType(str, Enum):
@@ -37,6 +41,12 @@ class EventType(str, Enum):
     GRAPH_EDGE_ADD = "GRAPH_EDGE_ADD"
     PIPELINE_COMPLETE = "PIPELINE_COMPLETE"
     HEARTBEAT = "HEARTBEAT"
+    # ── Swarm Intelligence Events ─────────────────────────────────
+    PERSONA_INSIGHT = "PERSONA_INSIGHT"
+    REPORT_CHUNK = "REPORT_CHUNK"
+    CONSENSUS_RESULT = "CONSENSUS_RESULT"
+    SCENARIO_DIFF = "SCENARIO_DIFF"
+    SCENARIO_EVAL = "SCENARIO_EVAL"
 
 
 class JobStatus(str, Enum):
@@ -156,3 +166,87 @@ class PipelineResult(BaseModel):
     total_entities: int = 0
     total_relationships: int = 0
     total_processing_time_ms: float = 0.0
+
+
+# ── Swarm Intelligence Models ─────────────────────────────────────────────
+
+
+class PersonaConfig(BaseModel):
+    """Definition of an investigative persona."""
+    name: str
+    role: str
+    system_prompt: str
+    expertise_tags: list[str] = Field(default_factory=list)
+    temperature: float = 0.7
+
+
+class PersonaInsightEvent(BaseModel):
+    """Payload for PERSONA_INSIGHT events."""
+    persona_name: str
+    persona_role: str
+    insight: str
+    confidence: float = 0.0
+    follow_up_questions: list[str] = Field(default_factory=list)
+    evidence_refs: list[str] = Field(default_factory=list)
+
+
+class ChatRequest(BaseModel):
+    """Request to send a question to the ReportAgent or a materialized persona."""
+    job_id: str
+    message: str
+    conversation_id: Optional[str] = None
+    persona_id: Optional[str] = None  # set to interview a graph-entity persona
+
+
+class ChatResponse(BaseModel):
+    """Response from the ReportAgent."""
+    conversation_id: str
+    message: str
+    sources: list[str] = Field(default_factory=list)
+    confidence: float = 0.0
+    persona_id: Optional[str] = None
+
+
+class PersonaMaterialized(BaseModel):
+    """A materialized graph-entity persona."""
+    persona_id: str
+    name: str
+    role: str
+    evidence_refs: list[str] = Field(default_factory=list)
+    grounded_nodes: int = Field(default=1, description="Number of supporting graph nodes")
+    statements: list[str] = Field(default_factory=list)
+
+
+class PersonaMaterializeResponse(BaseModel):
+    """Result of POST /analysis/{job_id}/personas."""
+    job_id: str
+    personas: list[PersonaMaterialized]
+    count: int
+    total_person_nodes: int
+
+
+class ScenarioRequest(BaseModel):
+    """Inject a hypothesis scenario for evaluation."""
+    job_id: str
+    hypothesis: str
+
+
+class ScenarioEvaluation(BaseModel):
+    """A single persona's evaluation of a scenario."""
+    persona_name: str
+    verdict: str  # supports | contradicts | neutral
+    reasoning: str
+    confidence: float = 0.0
+
+
+class ScenarioResult(BaseModel):
+    """Full result of a scenario hypothesis evaluation."""
+    scenario_id: str
+    hypothesis: str
+    evaluations: list[ScenarioEvaluation] = Field(default_factory=list)
+    new_entities: list[GraphNodeEvent] = Field(default_factory=list)
+    new_edges: list[GraphEdgeEvent] = Field(default_factory=list)
+    removed_entities: list[dict] = Field(default_factory=list)
+    removed_edges: list[dict] = Field(default_factory=list)
+    consensus_verdict: str = "pending"  # supports | contradicts | neutral | mixed
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())

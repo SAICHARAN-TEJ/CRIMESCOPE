@@ -36,7 +36,11 @@ import type {
   VisNode,
   VisEdge,
   WSEvent,
+  ChatMessage,
+  PersonaProfile,
+  ScenarioDiff,
 } from "@/types";
+import * as api from "@/api";
 
 // ── Safety Limits ────────────────────────────────────────────────────────
 const MAX_EVENT_LOG = 1000;          // Cap eventLog to prevent memory leak
@@ -47,6 +51,7 @@ const VALID_EVENT_TYPES = new Set([
   "CONNECTED", "JOB_STARTED", "AGENT_START", "AGENT_PROGRESS",
   "AGENT_COMPLETE", "AGENT_ERROR", "GRAPH_NODE_ADD", "GRAPH_EDGE_ADD",
   "PIPELINE_COMPLETE", "HEARTBEAT", "BATCH_UPDATE",
+  "PERSONA_INSIGHT", "REPORT_CHUNK", "CONSENSUS_RESULT", "SCENARIO_DIFF"
 ]);
 
 export const useAnalysisStore = defineStore("analysis", () => {
@@ -63,6 +68,14 @@ export const useAnalysisStore = defineStore("analysis", () => {
   const nodes = shallowRef<GraphNode[]>([]);
   const edges = shallowRef<GraphEdge[]>([]);
   const eventLog = ref<WSEvent[]>([]);
+
+  // ── Swarm State ────────────────────────────────────────────────────
+  const swarmState = ref<"idle" | "materializing" | "reporting" | "simulating">("idle");
+  const personas = ref<PersonaProfile[]>([]);
+  const personaInsights = ref<any[]>([]);
+  const chatMessages = ref<ChatMessage[]>([]);
+  const activeReportChunk = ref<string>("");
+  const scenarios = ref<ScenarioDiff[]>([]);
 
   // ── Self-Healing State ─────────────────────────────────────────────
   const recoverableErrors = ref<Map<string, { error: string; attempts: number; recoverable: boolean }>>(new Map());
@@ -120,6 +133,8 @@ export const useAnalysisStore = defineStore("analysis", () => {
     return result;
   });
 
+  const scenarioDiffs = computed(() => scenarios.value);
+
   // ── Actions ────────────────────────────────────────────────────────
 
   function setToken(t: string) {
@@ -142,12 +157,18 @@ export const useAnalysisStore = defineStore("analysis", () => {
     handlerErrors.value = [];
     droppedMessageCount.value = 0;
     integrityWarnings.value = [];
+    swarmState.value = "idle";
+    personas.value = [];
+    personaInsights.value = [];
+    chatMessages.value = [];
+    activeReportChunk.value = "";
+    scenarios.value = [];
     if (pendingGraphFlush) {
       clearTimeout(pendingGraphFlush);
       pendingGraphFlush = null;
     }
 
-    const agentTypes: AgentType[] = ["video", "document", "entity", "graph"] as AgentType[];
+    const agentTypes: AgentType[] = ["video", "document", "entity", "graph", "persona", "report", "consensus", "scenario"] as AgentType[];
     for (const type of agentTypes) {
       agents.value.set(type, {
         type,
@@ -269,6 +290,32 @@ export const useAnalysisStore = defineStore("analysis", () => {
         _runIntegrityCheck();
         break;
       }
+
+      case "PERSONA_INSIGHT":
+        personaInsights.value.push(event?.data);
+        break;
+
+      case "REPORT_CHUNK": {
+        const content = _safeStr(event?.data?.content);
+        if (content) {
+          activeReportChunk.value += content;
+        } else if (event?.data?.done) {
+          if (activeReportChunk.value) {
+            chatMessages.value.push({ role: 'agent', content: activeReportChunk.value });
+            activeReportChunk.value = "";
+          }
+        }
+        break;
+      }
+
+      case "CONSENSUS_RESULT":
+        // We can append consensus to insights or handle separately
+        personaInsights.value.push({ type: 'consensus', ...event?.data });
+        break;
+
+      case "SCENARIO_DIFF":
+        scenarios.value.push(event?.data as unknown as ScenarioDiff);
+        break;
 
       case "HEARTBEAT":
         break;
@@ -428,7 +475,7 @@ export const useAnalysisStore = defineStore("analysis", () => {
 
   // ── Agent Status Helpers (safe property access) ────────────────────
 
-  function _updateAgent(event: WSEvent, newStatus: string): void {
+  function _updateAgent(event: WSEvent, newStatus: AgentStatus['status']): void {
     const agentType = event?.agent;
     if (!agentType || !agents.value.has(agentType)) return;
     const agent = agents.value.get(agentType)!;
@@ -524,6 +571,48 @@ export const useAnalysisStore = defineStore("analysis", () => {
     }
   }
 
+  // ── Swarm Actions ──────────────────────────────────────────────────
+
+  async function materializePersonas() {
+    if (!token.value || !jobId.value) return;
+    swarmState.value = "materializing";
+    try {
+      await api.materializePersonas(token.value, jobId.value);
+      const list = await api.listPersonas(token.value);
+      personas.value = list;
+    } catch (err) {
+      console.error("[CrimeScope] Materialize Personas failed:", err);
+    } finally {
+      swarmState.value = "idle";
+    }
+  }
+
+  async function sendChat(message: string) {
+    if (!token.value || !jobId.value) return;
+    chatMessages.value.push({ role: "user", content: message });
+    swarmState.value = "reporting";
+    try {
+      await api.sendChat(token.value, jobId.value, message);
+      // Response comes via WS (REPORT_CHUNK)
+    } catch (err) {
+      console.error("[CrimeScope] Send Chat failed:", err);
+      swarmState.value = "idle";
+    }
+  }
+
+  async function injectScenario(hypothesis: string) {
+    if (!token.value || !jobId.value) return;
+    swarmState.value = "simulating";
+    try {
+      await api.injectScenario(token.value, jobId.value, hypothesis);
+      // Response comes via WS (SCENARIO_DIFF)
+    } catch (err) {
+      console.error("[CrimeScope] Inject Scenario failed:", err);
+    } finally {
+      swarmState.value = "idle";
+    }
+  }
+
   // ── Integrity Check ────────────────────────────────────────────────
 
   function _runIntegrityCheck(): void {
@@ -602,6 +691,11 @@ export const useAnalysisStore = defineStore("analysis", () => {
     handlerErrors.value = [];
     droppedMessageCount.value = 0;
     integrityWarnings.value = [];
+    personas.value = [];
+    personaInsights.value = [];
+    chatMessages.value = [];
+    activeReportChunk.value = "";
+    scenarios.value = [];
     if (pendingGraphFlush) {
       clearTimeout(pendingGraphFlush);
       pendingGraphFlush = null;
@@ -625,11 +719,19 @@ export const useAnalysisStore = defineStore("analysis", () => {
     handlerErrors,
     droppedMessageCount,
     integrityWarnings,
+    // Swarm State
+    swarmState,
+    personas,
+    personaInsights,
+    chatMessages,
+    activeReportChunk,
+    scenarios,
     // Computed
     agentList,
     visNodes,
     visEdges,
     retryableAgents,
+    scenarioDiffs,
     // Actions
     setToken,
     startJob,
@@ -637,5 +739,8 @@ export const useAnalysisStore = defineStore("analysis", () => {
     retryAgent,
     setError,
     reset,
+    materializePersonas,
+    sendChat,
+    injectScenario,
   };
 });

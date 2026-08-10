@@ -1,5 +1,6 @@
 # CrimeScope v4.1 — Production Docker Compose
 # 8 services: API, Worker, Beat, Frontend, Neo4j, Qdrant, Redis, MinIO
+# v4.3: + Postgres 16 (structured metadata: jobs, scenarios, conversations)
 
 services:
   # ── Backend API ──────────────────────────────────────────────────────
@@ -19,10 +20,12 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
+      postgres:
+        condition: service_healthy
     volumes:
       - ./backend/app:/opt/app/app:ro
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/healthz"]
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/healthz"]
       interval: 15s
       timeout: 5s
       retries: 3
@@ -162,9 +165,29 @@ services:
       start_period: 10s
     restart: unless-stopped
 
+  # ── PostgreSQL — structured metadata (jobs, scenarios, conversations) ─
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    environment:
+      POSTGRES_DB: "${POSTGRES_DB:-crimescope}"
+      POSTGRES_USER: "${POSTGRES_USER:-crimescope}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-crimescope}"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-crimescope} -d ${POSTGRES_DB:-crimescope}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
 volumes:
   neo4j_data:
   neo4j_logs:
   qdrant_data:
   redis_data:
   minio_data:
+  postgres_data:

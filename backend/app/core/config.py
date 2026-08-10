@@ -48,6 +48,11 @@ class Settings(BaseSettings):
     minio_bucket: str = "crimescope-evidence"
     minio_secure: bool = False
 
+    # ── Postgres ───────────────────────────────────────────────────────
+    database_url: str = "postgresql+asyncpg://crimescope:crimescope@localhost:5432/crimescope"
+    db_pool_size: int = 8
+    db_max_overflow: int = 4
+
     # ── LLM ────────────────────────────────────────────────────────────
     openrouter_api_key: str = ""
     llm_fast_model: str = "qwen/qwen-2.5-72b-instruct"
@@ -68,6 +73,14 @@ class Settings(BaseSettings):
     stress_test_node_count: int = 1024     # Nodes to create during stress test
     stress_test_edge_count: int = 2048     # Edges to create during stress test
     stress_test_ws_events: int = 500       # WS events to generate
+
+    # ── Swarm Intelligence ────────────────────────────────────────────
+    consensus_agent_count: int = 3         # Parallel entity extractors for consensus
+    consensus_threshold: float = 0.5       # Min agreement ratio (0.5 = majority vote)
+    max_personas: int = 5                  # Max concurrent persona agents
+    persona_temperature: float = 0.7       # Default LLM temperature for personas
+    scenario_enabled: bool = True          # Feature flag for scenario injection
+    max_agent_concurrency: int = 8         # Per-agent-type concurrency semaphore
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
 

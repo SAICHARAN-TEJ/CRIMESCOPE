@@ -1,0 +1,244 @@
+/**
+ * CrimeScope v6.0 — Analyst Console Design System
+ *
+ * Palette: Deep Charcoal (OKLCH), Off-white, Muted Gray
+ * Vibe: Palantir Gotham, SOC Dashboards, Analyst Tools
+ * Typography: Instrument Serif (display) · Inter (body) · JetBrains Mono (data)
+ */
+
+/* ── Google Fonts ───────────────────────────────────────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:ital,opsz,wght@0,14..32,300..700;1,14..32,300..500&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+/* ── Reset ──────────────────────────────────────────────────────────── */
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+:where(button, input, select, textarea) { font: inherit; }
+
+/* ── Design Tokens ──────────────────────────────────────────────────── */
+:root {
+  /* ── Core Palette (OKLCH) ── */
+  --surface-0:    oklch(0.18 0.01 250); /* Background */
+  --surface-1:    oklch(0.22 0.01 250); /* Base panels */
+  --surface-2:    oklch(0.26 0.01 250); /* Elevated cards */
+  --surface-3:    oklch(0.30 0.01 250); /* Hover states */
+  
+  --border-dim:   oklch(0.30 0.01 250);
+  --border:       oklch(0.35 0.01 250);
+  --border-strong:oklch(0.45 0.01 250);
+  
+  --text-primary: oklch(0.95 0 0);
+  --text-secondary: oklch(0.70 0.01 250);
+  --text-muted:   oklch(0.55 0.01 250);
+
+  /* ── Accents ── */
+  --accent:       oklch(0.65 0.15 250);
+  --accent-hover: oklch(0.70 0.15 250);
+  --accent-muted: oklch(0.30 0.05 250);
+  
+  --crimson:      oklch(0.60 0.20 20);
+  --crimson-muted:oklch(0.28 0.05 20);
+  
+  --amber:        oklch(0.75 0.15 70);
+  --amber-muted:  oklch(0.30 0.05 70);
+  
+  --forest:       oklch(0.65 0.15 150);
+  --forest-muted: oklch(0.28 0.05 150);
+
+  /* ── Typography ── */
+  --font-display: 'Instrument Serif', Georgia, serif;
+  --font-body:    'Inter', system-ui, sans-serif;
+  --font-mono:    'JetBrains Mono', monospace;
+
+  /* ── Spacing Scale ── */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* ── Radii ── */
+  --radius-sm: 4px;
+  --radius:    8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+
+  /* ── Shadows ── */
+  --shadow-xs: 0 1px 2px rgba(0,0,0,0.5);
+  --shadow-sm: 0 2px 4px rgba(0,0,0,0.5);
+  --shadow:    0 4px 8px rgba(0,0,0,0.5);
+  --shadow-lg: 0 8px 16px rgba(0,0,0,0.5);
+
+  /* ── Transitions ── */
+  --ease-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --dur-fast: 150ms;
+  --dur: 250ms;
+}
+
+/* ── Base ────────────────────────────────────────────────────────────── */
+html {
+  font-size: 16px;
+  scroll-behavior: smooth;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  font-family: var(--font-body);
+  background: var(--surface-0);
+  color: var(--text-primary);
+  min-height: 100vh;
+  line-height: 1.6;
+}
+
+/* ── Typography ─────────────────────────────────────────────────────── */
+h1, h2, h3, h4, h5 {
+  font-family: var(--font-display);
+  color: var(--text-primary);
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+}
+
+h1 { font-size: clamp(2rem, 4vw, 3rem); font-weight: 400; font-style: italic; }
+h2 { font-size: clamp(1.5rem, 2.5vw, 2.2rem); font-weight: 400; }
+h3 { font-size: clamp(1.2rem, 2vw, 1.5rem); font-weight: 400; }
+h4 { font-size: 1rem; font-family: var(--font-body); font-weight: 500; }
+
+p { color: var(--text-secondary); max-width: 65ch; }
+
+.mono { font-family: var(--font-mono); font-size: 0.9em; }
+.serif { font-family: var(--font-display); }
+
+/* ── Label / Eyebrow ─────────────────────────────────────────────────── */
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* ── Card ────────────────────────────────────────────────────────────── */
+.card {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  position: relative;
+}
+
+.panel {
+  background: var(--surface-0);
+  border: 1px solid var(--border-dim);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+}
+
+/* ── Divider ─────────────────────────────────────────────────────────── */
+.divider {
+  height: 1px;
+  background: var(--border);
+  width: 100%;
+}
+
+/* ── Badge ───────────────────────────────────────────────────────────── */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.badge--red     { background: var(--crimson-muted); color: var(--crimson); border: 1px solid oklch(0.60 0.20 20 / 0.2); }
+.badge--amber   { background: var(--amber-muted);   color: var(--amber);   border: 1px solid oklch(0.75 0.15 70 / 0.2); }
+.badge--green   { background: var(--forest-muted);  color: var(--forest);  border: 1px solid oklch(0.65 0.15 150 / 0.2); }
+.badge--blue    { background: var(--accent-muted);  color: var(--accent);  border: 1px solid oklch(0.65 0.15 250 / 0.2); }
+.badge--slate   { background: var(--surface-2);     color: var(--text-secondary); border: 1px solid var(--border); }
+
+/* ── Button System ───────────────────────────────────────────────────── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-4);
+  height: 36px;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: all var(--dur-fast) var(--ease-out);
+}
+
+.btn--primary {
+  background: var(--accent);
+  color: var(--surface-0);
+}
+.btn--primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.btn--ghost {
+  background: transparent;
+  border-color: var(--border);
+  color: var(--text-secondary);
+}
+.btn--ghost:hover:not(:disabled) {
+  background: var(--surface-2);
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ── Input ───────────────────────────────────────────────────────────── */
+.input {
+  height: 36px;
+  padding: 0 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--text-primary);
+  outline: none;
+  width: 100%;
+  transition: border-color var(--dur-fast);
+}
+.input:focus {
+  border-color: var(--accent);
+}
+.input::placeholder { color: var(--text-muted); }
+
+/* ── Scrollbar ───────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--surface-0); }
+::-webkit-scrollbar-thumb { background: var(--surface-3); border-radius: 100px; }
+::-webkit-scrollbar-thumb:hover { background: var(--border-strong); }
+
+/* ── Vis.js Network Global Overrides ─────────────────────────────────── */
+.vis-network {
+  outline: none !important;
+}
+.vis-tooltip {
+  background-color: var(--surface-2) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius) !important;
+  color: var(--text-primary) !important;
+  font-family: var(--font-body) !important;
+  font-size: 13px !important;
+  padding: 8px 12px !important;
+  box-shadow: var(--shadow) !important;
+}

@@ -26,6 +26,7 @@ from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
 
 from app.core.config import get_settings
 from app.core.logger import get_logger, setup_logging
@@ -47,6 +48,14 @@ async def lifespan(application: FastAPI):
     logger.info("  Self-Validating • Self-Healing • Forensically Robust")
     logger.info("=" * 60)
 
+    # ── Security startup check ───────────────────────────────────────
+    if settings.jwt_secret_key == "CHANGE-ME-TO-A-SECURE-RANDOM-STRING":
+        logger.warning(
+            "⚠  SECURITY: JWT_SECRET_KEY is set to the insecure default! "
+            "Generate a real secret: python -c \"import secrets; print(secrets.token_hex(32))\" "
+            "and set it in your .env file."
+        )
+
     if settings.enable_chaos_mode:
         logger.warning("🔥 CHAOS MODE ENABLED — Controlled failures will be injected")
 
@@ -60,10 +69,24 @@ async def lifespan(application: FastAPI):
     minio = get_minio()
     minio.connect()
 
+    # ── Postgres: warm the pool + start the failed-writes DLQ worker ──
+    from app.db import dlq as db_dlq
+    from app.db.session import engine as db_engine
+
+    try:
+        async with db_engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+        logger.info("Postgres connected")
+    except Exception as e:
+        logger.warning(f"Postgres unavailable at startup (will retry via DLQ): {e}")
+
+    db_dlq.dlq_worker_task()
+
     logger.info(
         f"Services: Redis={'✓' if redis.connected else '✗'} "
         f"Neo4j={'✓' if neo4j.connected else '✗'} "
-        f"MinIO={'✓' if minio.connected else '✗'}"
+        f"MinIO={'✓' if minio.connected else '✗'} "
+        f"Postgres=✓/✗(dlq)"
     )
     logger.info("CrimeScope API ready")
 
@@ -73,6 +96,7 @@ async def lifespan(application: FastAPI):
     logger.info("Shutting down...")
     await redis.disconnect()
     await neo4j.disconnect()
+    await db_engine.dispose()
     logger.info("CrimeScope stopped")
 
 
@@ -90,14 +114,38 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# ── Security Headers Middleware ──────────────────────────────────────────
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request as StarletteRequest
+from starlette.responses import Response as StarletteResponse
+
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Inject security-hardening HTTP response headers on every response."""
+
+    async def dispatch(self, request: StarletteRequest, call_next) -> StarletteResponse:
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+        # Only add HSTS when actually served over HTTPS
+        if request.url.scheme == "https":
+            response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains; preload"
+        return response
+
+
+app.add_middleware(SecurityHeadersMiddleware)
+
 # ── CORS ─────────────────────────────────────────────────────────────────
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000", "http://localhost:5173"],
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Correlation-ID"],
 )
 
 # ── Routers ──────────────────────────────────────────────────────────────
@@ -112,7 +160,7 @@ app.include_router(ws_router)
 # ── Debug / Forensic Endpoints ───────────────────────────────────────────
 
 
-@app.get("/debug/chaos-status")
+@app.get("/debug/chaos-status", include_in_schema=False)
 async def chaos_status():
     """Show current chaos engineering configuration."""
     settings = get_settings()
@@ -134,7 +182,7 @@ async def chaos_status():
     }
 
 
-@app.get("/debug/dead-letter-queue")
+@app.get("/debug/dead-letter-queue", include_in_schema=False)
 async def get_dead_letter_queue(limit: int = 50):
     """Retrieve items from the dead letter queue for manual recovery."""
     import json as _json

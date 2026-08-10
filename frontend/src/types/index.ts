@@ -12,6 +12,10 @@ export enum AgentType {
   ENTITY = "entity",
   GRAPH = "graph",
   SUPERVISOR = "supervisor",
+  PERSONA = "persona",
+  REPORT = "report",
+  CONSENSUS = "consensus",
+  SCENARIO = "scenario",
 }
 
 export enum EventType {
@@ -25,6 +29,10 @@ export enum EventType {
   PIPELINE_COMPLETE = "PIPELINE_COMPLETE",
   HEARTBEAT = "HEARTBEAT",
   CONNECTED = "CONNECTED",
+  PERSONA_INSIGHT = "PERSONA_INSIGHT",
+  REPORT_CHUNK = "REPORT_CHUNK",
+  CONSENSUS_RESULT = "CONSENSUS_RESULT",
+  SCENARIO_DIFF = "SCENARIO_DIFF",
 }
 
 export enum JobStatus {
@@ -64,11 +72,52 @@ export interface GraphEdge {
 // ── Agent State ──────────────────────────────────────────────────────────
 
 export interface AgentStatus {
-  type: AgentType;
+  type: AgentType | string;
   status: "idle" | "running" | "complete" | "error";
   processingTimeMs: number;
   entityCount: number;
   error?: string;
+}
+
+// ── Swarm Data Types ─────────────────────────────────────────────────────
+
+export interface PersonaProfile {
+  id: string;
+  name: string;
+  role: string;
+  motivation: string;
+  background: string;
+  bias?: string;
+}
+
+export interface PersonaInsight {
+  persona_id: string;
+  persona_name: string;
+  insight: string;
+  confidence: number;
+  nodes_referenced: string[];
+}
+
+export interface ReportChunk {
+  content: string;
+}
+
+export interface ChatMessage {
+  role: "user" | "agent" | string;
+  content: string;
+}
+
+export interface ConsensusResult {
+  agreement: string;
+  disagreement: string;
+  synthesis: string;
+}
+
+export interface ScenarioDiff {
+  scenario_id: string;
+  nodes_added: GraphNode[];
+  edges_added: GraphEdge[];
+  insights: string[];
 }
 
 // ── API Types ────────────────────────────────────────────────────────────
