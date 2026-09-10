@@ -60,3 +60,6 @@ test-results/
 .codegraph/
 .vite/
 thoughts/
+
+# ── Deepwork orchestration state ───────────────────────────────────────
+.slim/deepwork/

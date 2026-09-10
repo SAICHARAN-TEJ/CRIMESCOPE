@@ -27,7 +27,7 @@ from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
-from app.core.config import get_settings
+from app.core.config import get_settings, validate_startup_security
 from app.core.logger import get_logger, setup_logging
 from app.core.redis_client import get_redis
 from app.core.security import get_admin_user
@@ -49,12 +49,10 @@ async def lifespan(application: FastAPI):
     logger.info("=" * 60)
 
     # ── Security startup check ───────────────────────────────────────
-    if settings.jwt_secret_key == "CHANGE-ME-TO-A-SECURE-RANDOM-STRING":
-        logger.warning(
-            "⚠  SECURITY: JWT_SECRET_KEY is set to the insecure default! "
-            "Generate a real secret: python -c \"import secrets; print(secrets.token_hex(32))\" "
-            "and set it in your .env file."
-        )
+    # Refuses to boot in production with a weak/default JWT secret;
+    # logs a warning in development instead (P1 — replaces the weaker
+    # inline exact-string check that only caught the default value).
+    validate_startup_security(settings)
 
     if settings.enable_chaos_mode:
         logger.warning("🔥 CHAOS MODE ENABLED — Controlled failures will be injected")

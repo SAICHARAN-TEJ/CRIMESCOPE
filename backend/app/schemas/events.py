@@ -92,16 +92,16 @@ class GraphEdgeEvent(BaseModel):
 
 class UploadInitRequest(BaseModel):
     """Request to get a pre-signed upload URL from MinIO."""
-    filename: str
-    content_type: str = "application/octet-stream"
+    filename: str = Field(max_length=255)
+    content_type: str = Field(default="application/octet-stream", max_length=128)
 
 
 class UploadCompleteRequest(BaseModel):
     """Notify backend that upload to MinIO is done."""
-    object_key: str
-    filename: str
-    content_type: str
-    file_size: int = 0
+    object_key: str = Field(max_length=512)
+    filename: str = Field(max_length=255)
+    content_type: str = Field(max_length=128)
+    file_size: int = Field(default=0, ge=0)
 
 
 class AnalysisStartRequest(BaseModel):

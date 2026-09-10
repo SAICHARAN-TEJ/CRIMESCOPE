@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import tempfile
 import time
@@ -70,6 +71,63 @@ def _with_job_attempt(data: dict[str, Any], attempt: int | None) -> dict[str, An
     return data
 
 
+# ── Safe local naming (P0-1) ──────────────────────────────────────────────
+
+# Extensions a worker may create locally. Derived ONLY from these allowlists —
+# the client-supplied filename never contributes path bytes beyond a matched
+# suffix, so `Path(tmpdir) / <safe name>` can never escape the temp dir.
+_EXTENSION_BY_SUFFIX: dict[str, str] = {
+    ".mp4": ".mp4", ".avi": ".avi", ".mov": ".mov", ".mkv": ".mkv",
+    ".webm": ".webm", ".wmv": ".wmv", ".flv": ".flv",
+    ".pdf": ".pdf", ".docx": ".docx", ".txt": ".txt",
+}
+_EXTENSION_BY_MIME: dict[str, str] = {
+    "video/mp4": ".mp4",
+    "video/x-msvideo": ".avi",
+    "video/quicktime": ".mov",
+    "video/x-matroska": ".mkv",
+    "video/webm": ".webm",
+    "video/x-ms-wmv": ".wmv",
+    "video/x-flv": ".flv",
+    "application/pdf": ".pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+    "text/plain": ".txt",
+}
+
+# Display names may keep readable characters but never path separators.
+_DISPLAY_SAFE_RE = re.compile(r"[^A-Za-z0-9._ -]")
+
+
+def _derive_extension(filename: str | None, content_type: str | None) -> str:
+    """Pick a worker-known extension from the allowlists (suffix → MIME → .bin)."""
+    # NUL bytes never reach Path(): some platforms reject them at construction.
+    suffix = Path(filename.replace("\x00", "")).suffix.lower() if filename else ""
+    if suffix in _EXTENSION_BY_SUFFIX:
+        return _EXTENSION_BY_SUFFIX[suffix]
+    mime = (content_type or "").split(";")[0].strip().lower()
+    if mime in _EXTENSION_BY_MIME:
+        return _EXTENSION_BY_MIME[mime]
+    return ".bin"
+
+
+def _safe_local_name(filename: str | None, content_type: str | None = "") -> str:
+    """Server-fixed local name for evidence downloaded into a worker temp dir.
+
+    The base name is constant; only the extension varies, and only via the
+    allowlists above. A crafted absolute path, `..` segment, null byte, or
+    unknown extension can therefore never influence the local path (P0-1).
+    """
+    return "evidence" + _derive_extension(filename, content_type)
+
+
+def _display_name(filename: str | None) -> str:
+    """Bounded, path-separator-free name for event payloads (display only)."""
+    name = Path((filename or "unknown").replace("\x00", "")).name
+    name = _DISPLAY_SAFE_RE.sub("_", name)
+    name = name.strip() or "unknown"
+    return name[:120]
+
+
 # ── Video Processing Task ─────────────────────────────────────────────────
 
 
@@ -98,12 +156,14 @@ def process_video(self, job_id: str, file_meta: dict[str, Any], attempt: int | N
     start = time.time()
     filename = file_meta.get("filename", "unknown.mp4")
     object_key = file_meta.get("object_key", "")
+    content_type = file_meta.get("content_type", "")
+    display = _display_name(filename)
 
     _publish_event(job_id, {
         "event": "AGENT_START",
         "job_id": job_id,
         "agent": "video",
-        "data": _with_job_attempt({"filename": filename}, attempt),
+        "data": _with_job_attempt({"filename": display}, attempt),
     })
 
     text_chunks: list[str] = []
@@ -122,7 +182,8 @@ def process_video(self, job_id: str, file_meta: dict[str, Any], attempt: int | N
         bucket = os.getenv("MINIO_BUCKET", "crimescope-uploads")
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            local_path = Path(tmpdir) / filename
+            # P0-1: server-fixed name — client bytes never reach the path
+            local_path = Path(tmpdir) / _safe_local_name(filename, content_type)
             minio_client.fget_object(bucket, object_key, str(local_path))
 
             # ── Extract keyframes with FFmpeg ─────────────────────────
@@ -166,7 +227,7 @@ def process_video(self, job_id: str, file_meta: dict[str, Any], attempt: int | N
                             chunk = " ".join(words[i:i + 500])
                             text_chunks.append(chunk)
                 except ImportError:
-                    text_chunks.append(f"[Whisper unavailable] Video processed: {filename}")
+                    text_chunks.append(f"[Whisper unavailable] Video processed: {display}")
 
         elapsed = (time.time() - start) * 1000
 
@@ -231,12 +292,13 @@ def process_document(self, job_id: str, file_meta: dict[str, Any], attempt: int 
     filename = file_meta.get("filename", "unknown")
     object_key = file_meta.get("object_key", "")
     content_type = file_meta.get("content_type", "")
+    display = _display_name(filename)
 
     _publish_event(job_id, {
         "event": "AGENT_START",
         "job_id": job_id,
         "agent": "document",
-        "data": _with_job_attempt({"filename": filename}, attempt),
+        "data": _with_job_attempt({"filename": display}, attempt),
     })
 
     text_chunks: list[str] = []
@@ -253,7 +315,8 @@ def process_document(self, job_id: str, file_meta: dict[str, Any], attempt: int 
         bucket = os.getenv("MINIO_BUCKET", "crimescope-uploads")
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            local_path = Path(tmpdir) / filename
+            # P0-1: server-fixed name — client bytes never reach the path
+            local_path = Path(tmpdir) / _safe_local_name(filename, content_type)
             minio_client.fget_object(bucket, object_key, str(local_path))
 
             raw_text = ""

@@ -175,6 +175,13 @@ async def get_presigned_url(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Storage service unavailable",
         )
+
+    # Server-issued ownership record for this object key (P0-2). /analysis/start
+    # requires this token to match before downloading anything. Best-effort:
+    # RedisClient.set is a no-op when Redis is down (degraded prefix-only mode).
+    redis = get_redis()
+    await redis.set(f"upload:presign:{object_key}", user_id, ex=86400)
+
     return PresignedURLResponse(upload_url=url, object_key=object_key)
 
 
@@ -196,6 +203,39 @@ async def start_analysis(
     """
     job_id = req.job_id
     user_id = user["sub"]
+
+    # ── Ownership validation (P0-2) ──────────────────────────────────
+    # Every object key must (a) live under the requesting user's uploads/
+    # prefix — hard check, never bypassed — and (b) carry a server-issued
+    # presign token matching this user, proving the key came from OUR
+    # presign endpoint rather than the client's imagination.
+    redis = get_redis()
+    expected_prefix = f"uploads/{user_id}/"
+    for f in req.files:
+        if not f.object_key.startswith(expected_prefix):
+            logger.warning(
+                "Ownership check failed for %s: not under requesting user's prefix", f.object_key
+            )
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied: evidence object does not belong to this user",
+            )
+        if redis.connected:
+            token_user = await redis.get(f"upload:presign:{f.object_key}")
+            if token_user != user_id:
+                logger.warning(
+                    "Presign token check failed for %s (found=%s)", f.object_key, token_user is not None
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Access denied: evidence object has no valid upload record",
+                )
+        else:
+            # Redis unavailable: degrade to prefix-only validation. Matches the
+            # existing degraded-mode philosophy (fail-open on non-auth paths).
+            logger.warning(
+                "Redis unavailable during /analysis/start — ownership validated by prefix only"
+            )
 
     # Persist job metadata in Postgres (queued). Create is enqueued to the
     # DLQ on DB failure rather than crashing the request.
