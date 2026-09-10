@@ -17,7 +17,6 @@ import io
 import re
 from typing import Any
 
-from app.core.config import get_settings
 from app.core.logger import get_logger
 from app.engine.agents.base import BaseAgent, DataIntegrityError, chaos_injector
 from app.schemas.events import AgentResult, AgentType

@@ -17,7 +17,6 @@ v4.2 Hardening:
 from __future__ import annotations
 
 import asyncio
-import os
 import re
 import subprocess
 import tempfile
@@ -74,7 +73,7 @@ def _validate_video_file(path: str) -> dict[str, Any]:
                 "-of", "csv=p=0",
                 path,
             ],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True, text=True, timeout=30, check=False,
         )
         if result.returncode != 0:
             stderr = (result.stderr or "")[:500]
@@ -370,7 +369,7 @@ class VideoAgent(BaseAgent):
 
             except Exception as e:
                 # Per-file isolation — one corrupt file never kills the pipeline
-                logger.error(f"Video processing crashed for {filename}: {e}", exc_info=True)
+                logger.exception(f"Video processing crashed for {filename}")
                 all_facts.append(f"⚠ {filename} crashed: {type(e).__name__}: {e}")
                 all_transcripts.append({
                     "video_index": i,

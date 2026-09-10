@@ -1,4 +1,4 @@
-﻿"""
+"""
 CrimeScope â€” REST API Router.
 
 All endpoints require JWT authentication and rate limiting.
@@ -26,14 +26,25 @@ from uuid import uuid4
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy import text
 
-from app.api.dependencies import inject_correlation_id, rate_limit, require_auth
+from app.api.dependencies import (
+    inject_correlation_id,
+    rate_limit,
+    rate_limit_auth,
+)
 from app.core.logger import get_logger
 from app.core.redis_client import get_redis
-from app.core.security import create_access_token, hash_password, sanitize_input, verify_password
+from app.core.security import (
+    create_access_token,
+    get_current_user,
+    needs_rehash,
+    sanitize_input,
+    verify_password,
+)
 from app.db import repositories
+from app.db.dlq import WriteFailed
 from app.db.models import Job, Scenario
 from app.engine.supervisor import Supervisor
-from app.graph.driver import get_neo4j
+from app.graph.driver import GraphUnavailable, get_neo4j
 from app.schemas.events import (
     AnalysisStartRequest,
     ChatRequest,
@@ -42,11 +53,10 @@ from app.schemas.events import (
     JobResponse,
     JobStatus,
     LoginRequest,
-    PersonaMaterializeResponse,
     PersonaMaterialized,
+    PersonaMaterializeResponse,
     PresignedURLResponse,
     ScenarioRequest,
-    ScenarioResult,
     TokenResponse,
     UploadInitRequest,
 )
@@ -54,12 +64,6 @@ from app.storage.minio_client import get_minio
 
 router = APIRouter()
 logger = get_logger("crimescope.api")
-
-# In-memory user store (replace with DB in production)
-_USERS: dict[str, dict[str, str]] = {
-    "admin": {"password_hash": hash_password("crimescope"), "user_id": "admin"},
-}
-
 
 def _job_to_dict(job: Job) -> dict[str, Any]:
     """Serialize a Job ORM row to the API-facing dict shape."""
@@ -120,17 +124,26 @@ async def _interview_persona(
 
 
 @router.post("/auth/token", response_model=TokenResponse, tags=["Auth"])
-async def login(req: LoginRequest, _: None = Depends(rate_limit)):
+async def login(req: LoginRequest, _: None = Depends(rate_limit_auth)):
     """Authenticate and return a JWT access token."""
-    user = _USERS.get(req.username)
-    if not user or not verify_password(req.password, user["password_hash"]):
+    try:
+        user = await repositories.users.get_by_username(req.username)
+    except WriteFailed as exc:
+        raise HTTPException(status_code=503, detail="Authentication service unavailable") from exc
+    if user is None or not verify_password(req.password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid credentials",
         )
     from app.core.config import get_settings
     settings = get_settings()
-    token = create_access_token({"sub": user["user_id"], "username": req.username})
+    if needs_rehash(req.password, user.password_hash):
+        from app.core.security import hash_password
+        try:
+            await repositories.users.update_password_hash(user.id, hash_password(req.password))
+        except WriteFailed:
+            logger.warning("Password rehash deferred for %s", req.username)
+    token = create_access_token({"sub": user.username, "username": user.username, "is_admin": bool(user.is_admin)})
     return TokenResponse(
         access_token=token,
         expires_in=settings.jwt_expire_minutes * 60,
@@ -143,16 +156,16 @@ async def login(req: LoginRequest, _: None = Depends(rate_limit)):
 @router.post("/upload/presign", response_model=PresignedURLResponse, tags=["Upload"])
 async def get_presigned_url(
     req: UploadInitRequest,
-    user: dict = Depends(require_auth),
     _rate: None = Depends(rate_limit),
     _cid: str = Depends(inject_correlation_id),
+    user: dict[str, Any] = Depends(get_current_user),
 ):
     """
     Get a pre-signed URL for direct-to-MinIO upload.
     Frontend uploads the file directly â€” backend never touches the bytes.
     """
     import uuid
-    user_id = user.get("sub", "anon")
+    user_id = user["sub"]
     object_key = f"uploads/{user_id}/{uuid.uuid4().hex}/{req.filename}"
 
     minio = get_minio()
@@ -172,9 +185,9 @@ async def get_presigned_url(
 async def start_analysis(
     req: AnalysisStartRequest,
     background_tasks: BackgroundTasks,
-    user: dict = Depends(require_auth),
     _rate: None = Depends(rate_limit),
     _cid: str = Depends(inject_correlation_id),
+    user: dict[str, Any] = Depends(get_current_user),
 ):
     """
     Start a new analysis pipeline.
@@ -182,7 +195,7 @@ async def start_analysis(
     Pipeline runs in the background.
     """
     job_id = req.job_id
-    user_id = user.get("sub", "anon")
+    user_id = user["sub"]
 
     # Persist job metadata in Postgres (queued). Create is enqueued to the
     # DLQ on DB failure rather than crashing the request.
@@ -204,16 +217,12 @@ async def start_analysis(
 @router.get("/analysis/{job_id}", tags=["Analysis"])
 async def get_job_status(
     job_id: str,
-    user: dict = Depends(require_auth),
+    user: dict[str, Any] = Depends(get_current_user),
 ):
     """Get the current status and results of an analysis job."""
-    job = await repositories.jobs.get(job_id)
+    job = await repositories.jobs.get(job_id, user_id=user["sub"])
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-
-    # Ownership check
-    from app.api.dependencies import verify_job_ownership
-    verify_job_ownership(user, job.user_id)
 
     return {
         "job_id": job_id,
@@ -226,28 +235,23 @@ async def get_job_status(
 async def retry_analysis(
     job_id: str,
     background_tasks: BackgroundTasks,
-    user: dict = Depends(require_auth),
     _rate: None = Depends(rate_limit),
     _cid: str = Depends(inject_correlation_id),
+    user: dict[str, Any] = Depends(get_current_user),
 ):
     """Re-queue a failed analysis job. Runs the pipeline again in the background."""
-    job = await repositories.jobs.get(job_id)
-    if not job:
+    try:
+        job, conflict = await repositories.jobs.retry(job_id, user_id=user["sub"])
+    except WriteFailed as exc:
+        raise HTTPException(status_code=503, detail="Job retry temporarily unavailable") from exc
+    if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
-
-    from app.api.dependencies import verify_job_ownership
-    verify_job_ownership(user, job.user_id)
-
-    if job.status != JobStatus.FAILED:
+    if conflict:
         raise HTTPException(
             status_code=409,
             detail=f"Job is {job.status}; only failed jobs can be retried",
         )
-
-    files_data = job.source_files
-    question = job.question
-    await repositories.jobs.update_status(job_id, JobStatus.QUEUED.value, result_summary=None)
-    background_tasks.add_task(_run_pipeline, job_id, job.user_id, files_data, question)
+    background_tasks.add_task(_run_pipeline, job_id, job.user_id, job.source_files, job.question or "", job.attempt)
 
     logger.info(f"Job {job_id} re-queued for retry")
     return JobResponse(
@@ -263,16 +267,18 @@ async def retry_analysis(
 @router.get("/graph/{job_id}", tags=["Graph"])
 async def get_graph(
     job_id: str,
-    user: dict = Depends(require_auth),
+    user: dict[str, Any] = Depends(get_current_user),
 ):
     """Get the Neo4j knowledge graph for a job."""
-    job = await repositories.jobs.get(job_id)
-    if job:
-        from app.api.dependencies import verify_job_ownership
-        verify_job_ownership(user, job.user_id)
+    job = await repositories.jobs.get(job_id, user_id=user["sub"])
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
 
     neo4j = get_neo4j()
-    subgraph = await neo4j.get_subgraph(job_id)
+    try:
+        subgraph = await neo4j.get_subgraph(job_id)
+    except GraphUnavailable as exc:
+        raise HTTPException(status_code=503, detail="Graph service unavailable") from exc
     return subgraph
 
 
@@ -281,8 +287,8 @@ async def get_graph(
 
 @router.get("/personas", tags=["Swarm Intelligence"])
 async def list_personas(
-    user: dict = Depends(require_auth),
     _rate: None = Depends(rate_limit),
+    _user: dict[str, Any] = Depends(get_current_user),
 ):
     """List the active investigative personas and their configurations."""
     from app.engine.agents.persona import get_default_personas
@@ -309,28 +315,28 @@ async def list_personas(
 )
 async def materialize_personas(
     job_id: str,
-    user: dict = Depends(require_auth),
     _rate: None = Depends(rate_limit),
     _cid: str = Depends(inject_correlation_id),
+    user: dict[str, Any] = Depends(get_current_user),
 ):
     """
     Materialize conversational persona agents from the job's Neo4j Person
     nodes. Each persona is grounded ONLY in its node's stored facts and
     edges — never invented outside the case data. Responses cite node IDs.
     """
-    job = await repositories.jobs.get(job_id)
+    job = await repositories.jobs.get(job_id, user_id=user["sub"])
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-
-    from app.api.dependencies import verify_job_ownership
-    verify_job_ownership(user, job.user_id)
 
     from app.core.config import get_settings
     from app.engine.agents.persona import materialize_graph_personas
 
     settings = get_settings()
     neo4j = get_neo4j()
-    subgraph = await neo4j.get_subgraph(job_id)
+    try:
+        subgraph = await neo4j.get_subgraph(job_id)
+    except GraphUnavailable as exc:
+        raise HTTPException(status_code=503, detail="Graph service unavailable") from exc
 
     persona_agents = materialize_graph_personas(subgraph, max_personas=settings.max_personas)
 
@@ -368,21 +374,18 @@ async def materialize_personas(
 async def send_chat(
     req: ChatRequest,
     background_tasks: BackgroundTasks,
-    user: dict = Depends(require_auth),
     _rate: None = Depends(rate_limit),
     _cid: str = Depends(inject_correlation_id),
+    user: dict[str, Any] = Depends(get_current_user),
 ):
     """
     Send an investigation question to the ReportAgent.
     The agent queries the full knowledge graph and returns an analysis.
     Streaming updates arrive via REPORT_CHUNK WebSocket events.
     """
-    job = await repositories.jobs.get(req.job_id)
+    job = await repositories.jobs.get(req.job_id, user_id=user["sub"])
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-
-    from app.api.dependencies import verify_job_ownership
-    verify_job_ownership(user, job.user_id)
 
     # Sanitize the message
     sanitized_message = sanitize_input(req.message)
@@ -398,7 +401,10 @@ async def send_chat(
 
     # Get graph context for the report agent
     neo4j = get_neo4j()
-    graph_context = await neo4j.get_subgraph(req.job_id)
+    try:
+        graph_context = await neo4j.get_subgraph(req.job_id)
+    except GraphUnavailable as exc:
+        raise HTTPException(status_code=503, detail="Graph service unavailable") from exc
 
     # Get entities from the job result
     entities = []
@@ -439,7 +445,8 @@ async def send_chat(
             confidence = report_data.get("confidence", 0.0)
 
     # Persist assistant message (best-effort — never blocks the response)
-    await repositories.conversations.add_message(conv_id, "agent", report_text, citations=sources)
+    citations = [s if isinstance(s, dict) else {"source": str(s)} for s in sources]
+    await repositories.conversations.add_message(conv_id, "assistant", report_text, citations=citations)
 
     return ChatResponse(
         conversation_id=conv_id,
@@ -457,9 +464,9 @@ async def send_chat(
 async def inject_scenario(
     req: ScenarioRequest,
     background_tasks: BackgroundTasks,
-    user: dict = Depends(require_auth),
     _rate: None = Depends(rate_limit),
     _cid: str = Depends(inject_correlation_id),
+    user: dict[str, Any] = Depends(get_current_user),
 ):
     """
     Inject a "what-if" hypothesis for evaluation by all personas.
@@ -471,12 +478,9 @@ async def inject_scenario(
     if not settings.scenario_enabled:
         raise HTTPException(status_code=403, detail="Scenario injection is disabled")
 
-    job = await repositories.jobs.get(req.job_id)
+    job = await repositories.jobs.get(req.job_id, user_id=user["sub"])
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-
-    from app.api.dependencies import verify_job_ownership
-    verify_job_ownership(user, job.user_id)
 
     sanitized_hypothesis = sanitize_input(req.hypothesis)
     if not sanitized_hypothesis.strip():
@@ -514,7 +518,7 @@ async def inject_scenario(
 @router.get("/scenario/{scenario_id}", tags=["Swarm Intelligence"])
 async def get_scenario_result(
     scenario_id: str,
-    user: dict = Depends(require_auth),
+    user: dict[str, Any] = Depends(get_current_user),
 ):
     """Get the evaluation results of a previously injected scenario."""
     scenario = await repositories.scenarios.get(scenario_id)
@@ -522,10 +526,9 @@ async def get_scenario_result(
         raise HTTPException(status_code=404, detail="Scenario not found")
 
     # Verify the user owns the associated job
-    job = await repositories.jobs.get(scenario.job_id)
-    if job:
-        from app.api.dependencies import verify_job_ownership
-        verify_job_ownership(user, job.user_id)
+    job = await repositories.jobs.get(scenario.job_id, user_id=user["sub"])
+    if not job:
+        raise HTTPException(status_code=404, detail="Scenario not found")
 
     return _scenario_to_dict(scenario)
 
@@ -586,20 +589,21 @@ async def _run_pipeline(
     user_id: str,
     files: list[dict],
     question: str,
+    attempt: int | None = None,
 ) -> None:
     """Run the supervisor pipeline in the background."""
-    await repositories.jobs.update_status(job_id, JobStatus.PROCESSING.value)
+    await repositories.jobs.update_status(job_id, JobStatus.PROCESSING.value, attempt=attempt)
 
     try:
         supervisor = Supervisor()
-        result = await supervisor.run(job_id, files, question)
+        result = await supervisor.run(job_id, files, question, attempt=attempt)
         await repositories.jobs.update_status(
-            job_id, result.status.value, result_summary=result.model_dump()
+            job_id, result.status.value, result_summary=result.model_dump(), attempt=attempt
         )
     except Exception as e:
-        logger.error(f"Pipeline {job_id} failed: {e}", exc_info=True)
+        logger.exception(f"Pipeline {job_id} failed")
         await repositories.jobs.update_status(
-            job_id, JobStatus.FAILED.value, error_message=str(e)
+            job_id, JobStatus.FAILED.value, error_message=str(e), attempt=attempt
         )
 
 
@@ -631,8 +635,7 @@ async def _run_scenario(
             },
         )
     except Exception as e:
-        logger.error(f"Scenario {scenario_id} failed: {e}", exc_info=True)
+        logger.exception(f"Scenario {scenario_id} failed")
         await repositories.scenarios.update_result(
             scenario_id, "failed", diff_result={"error": str(e)}
         )
-

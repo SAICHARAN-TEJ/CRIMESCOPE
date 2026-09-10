@@ -41,20 +41,23 @@ const injectScenario = async () => {
         <h5 class="mono text-muted mb-3">SCENARIO IMPACT</h5>
         
         <div class="diff-list">
-          <div 
-            v-for="(diff, idx) in store.scenarioDiffs" 
-            :key="idx"
+          <div
+            v-for="(diff, idx) in store.scenarioDiffs"
+            :key="diff.scenario_id || idx"
             class="diff-item"
           >
             <div class="diff-header">
-              <span class="diff-node mono">SCENARIO {{ diff.scenario_id.slice(0, 8) }}</span>
+              <span class="diff-node mono">SCENARIO {{ diff.scenario_id?.slice(0, 8) ?? '—' }}</span>
               <span class="diff-impact diff-impact--high">IMPACT DETECTED</span>
+            </div>
+            <div v-if="diff.consensus_verdict" class="diff-verdict mono">
+              CONSENSUS: {{ diff.consensus_verdict.toUpperCase() }}
             </div>
             <div class="diff-reason" v-for="(insight, i) in diff.insights" :key="i">
               - {{ insight }}
             </div>
             <div class="diff-reason mt-2 text-muted mono">
-              +{{ diff.nodes_added.length }} Nodes, +{{ diff.edges_added.length }} Edges
+              +{{ diff.new_entities?.length ?? 0 }} Nodes, +{{ diff.new_edges?.length ?? 0 }} Edges
             </div>
           </div>
         </div>
@@ -145,6 +148,12 @@ const injectScenario = async () => {
 .diff-node {
   font-size: 11px;
   color: var(--text-secondary);
+}
+
+.diff-verdict {
+  font-size: 10px;
+  color: var(--accent-cyan);
+  margin-bottom: var(--space-2);
 }
 
 .diff-impact {

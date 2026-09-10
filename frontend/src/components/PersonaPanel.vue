@@ -6,7 +6,8 @@ import type { PersonaProfile, PersonaInsight } from '@/types'
 const store = useAnalysisStore()
 
 const getInsightsForPersona = (personaId: string) => {
-  return store.personaInsights.filter(i => i.personaId === personaId)
+  // M-2: PERSONA_INSIGHT payloads carry persona_id/persona_name/insight/confidence.
+  return store.personaInsights.filter(i => i.persona_id === personaId)
 }
 </script>
 
@@ -47,9 +48,11 @@ const getInsightsForPersona = (personaId: string) => {
           <div class="persona-insights" v-if="getInsightsForPersona(persona.id).length > 0">
             <h5 class="mono text-muted">RECENT INSIGHTS</h5>
             <div class="insight-item" v-for="(insight, idx) in getInsightsForPersona(persona.id)" :key="idx">
-              <span class="insight-type mono">[{{ insight.type }}]</span>
-              <span class="insight-content">{{ insight.content }}</span>
-              <div class="insight-confidence">CONF: {{ Math.round(insight.confidence * 100) }}%</div>
+              <span class="insight-type mono">[{{ insight.persona_name ?? 'PERSONA' }}]</span>
+              <span class="insight-content">{{ insight.insight }}</span>
+              <div class="insight-confidence" v-if="typeof insight.confidence === 'number'">
+                CONF: {{ Math.round(insight.confidence * 100) }}%
+              </div>
             </div>
           </div>
         </div>

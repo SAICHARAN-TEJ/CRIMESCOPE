@@ -7,13 +7,12 @@ Strictly typed for OpenAPI generation and runtime validation.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
-
 
 # ── Enums ─────────────────────────────────────────────────────────────────
 
@@ -32,6 +31,7 @@ class AgentType(str, Enum):
 
 class EventType(str, Enum):
     """Events published to Redis and forwarded via WebSocket."""
+    CONNECTED = "CONNECTED"
     JOB_STARTED = "JOB_STARTED"
     AGENT_START = "AGENT_START"
     AGENT_PROGRESS = "AGENT_PROGRESS"
@@ -41,6 +41,7 @@ class EventType(str, Enum):
     GRAPH_EDGE_ADD = "GRAPH_EDGE_ADD"
     PIPELINE_COMPLETE = "PIPELINE_COMPLETE"
     HEARTBEAT = "HEARTBEAT"
+    BATCH_UPDATE = "BATCH_UPDATE"
     # ── Swarm Intelligence Events ─────────────────────────────────
     PERSONA_INSIGHT = "PERSONA_INSIGHT"
     REPORT_CHUNK = "REPORT_CHUNK"
@@ -64,10 +65,10 @@ class WSEvent(BaseModel):
     """Event published to Redis and forwarded to frontend via WebSocket."""
     event: EventType
     job_id: str
-    agent: Optional[AgentType] = None
+    agent: AgentType | None = None
     data: dict[str, Any] = Field(default_factory=dict)
-    timestamp: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
-    correlation_id: Optional[str] = None
+    timestamp: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
+    correlation_id: str | None = None
 
 
 class GraphNodeEvent(BaseModel):
@@ -143,7 +144,7 @@ class JobResponse(BaseModel):
 class HealthResponse(BaseModel):
     """System health check."""
     status: str
-    version: str = "4.0.0"
+    version: str = "4.4.0"
     services: dict[str, dict[str, Any]] = Field(default_factory=dict)
 
 
@@ -155,7 +156,7 @@ class AgentResult(BaseModel):
     entities: list[dict[str, Any]] = Field(default_factory=list)
     relationships: list[dict[str, Any]] = Field(default_factory=list)
     facts: list[str] = Field(default_factory=list)
-    error: Optional[str] = None
+    error: str | None = None
 
 
 class PipelineResult(BaseModel):
@@ -194,8 +195,8 @@ class ChatRequest(BaseModel):
     """Request to send a question to the ReportAgent or a materialized persona."""
     job_id: str
     message: str
-    conversation_id: Optional[str] = None
-    persona_id: Optional[str] = None  # set to interview a graph-entity persona
+    conversation_id: str | None = None
+    persona_id: str | None = None  # set to interview a graph-entity persona
 
 
 class ChatResponse(BaseModel):
@@ -204,7 +205,7 @@ class ChatResponse(BaseModel):
     message: str
     sources: list[str] = Field(default_factory=list)
     confidence: float = 0.0
-    persona_id: Optional[str] = None
+    persona_id: str | None = None
 
 
 class PersonaMaterialized(BaseModel):
@@ -249,4 +250,4 @@ class ScenarioResult(BaseModel):
     removed_entities: list[dict] = Field(default_factory=list)
     removed_edges: list[dict] = Field(default_factory=list)
     consensus_verdict: str = "pending"  # supports | contradicts | neutral | mixed
-    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    created_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())

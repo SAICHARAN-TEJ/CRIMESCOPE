@@ -1,6 +1,6 @@
 [project]
 name = "crimescope"
-version = "4.1.0"
+version = "4.4.0"
 description = "Production-grade criminal reconstruction engine with parallel AI agents, GraphRAG, and real-time streaming."
 requires-python = ">=3.11"
 dependencies = [
@@ -10,16 +10,16 @@ dependencies = [
     "python-multipart>=0.0.18",
     # ── Authentication & Security ────────────────────────────────────
     "python-jose[cryptography]>=3.4.0",
-    # ── Task Queue ────────────────────────────────────────────────────
+    "bcrypt>=4.0",
+    # ── Task Queue ───────────────────────────────────────────────────
     "celery[redis]>=5.4.0",
-    # ── AI / LLM ──────────────────────────────────────────────────────
+    # ── AI / LLM ─────────────────────────────────────────────────────
     "langgraph>=0.4.0",
     "langchain-core>=0.3.0",
     "httpx>=0.28.0",
     "openai>=1.60.0",
     # ── Databases ─────────────────────────────────────────────────────
     "neo4j>=5.28.0",
-    "qdrant-client>=1.13.0",
     "redis[hiredis]>=5.2.0",
     "sqlalchemy[asyncio]>=2.0.36",
     "asyncpg>=0.30.0",
@@ -31,7 +31,7 @@ dependencies = [
     "python-docx>=1.1.0",
     "ffmpeg-python>=0.2.0",
     # ── Embeddings ────────────────────────────────────────────────────
-    "sentence-transformers>=3.4.0",
+    "sentence-transformers",
     # ── Utilities ─────────────────────────────────────────────────────
     "pydantic>=2.10.0",
     "pydantic-settings>=2.7.0",
@@ -41,7 +41,7 @@ dependencies = [
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=1.0",
-    "ruff>=0.9.0",
+    "ruff>=0.16",
     "httpx>=0.28.0",
 ]
 
@@ -49,10 +49,43 @@ dev = [
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+pythonpath = ["."]
 
 [tool.ruff]
 target-version = "py311"
 line-length = 100
+
+[tool.ruff.lint]
+# Ruff >=0.16 ships an expanded default rule set (source of the v4.4 lint pass).
+# B008: FastAPI's `Depends(...)` in parameter defaults is the canonical pattern.
+ignore = ["B008"]
+
+[tool.ruff.lint.per-file-ignores]
+# Resilience modules: broad `except Exception` (and best-effort `except: pass`)
+# IS the documented degraded-mode pattern (§4/§8/§9/§12/§13 — never crash the
+# request, pipeline, or worker on a single agent/file/service failure).
+"app/db/dlq.py" = ["BLE001"]
+"app/db/repositories/*.py" = ["BLE001"]
+"app/graph/buffer.py" = ["BLE001"]
+"app/graph/driver.py" = ["BLE001"]
+"app/api/router.py" = ["BLE001"]
+"app/api/websocket.py" = ["BLE001", "S110"]
+"app/core/redis_client.py" = ["BLE001", "S110"]
+"app/core/security.py" = ["BLE001"]
+"app/engine/agents/base.py" = ["BLE001"]
+"app/engine/agents/document.py" = ["BLE001", "S110"]
+"app/engine/agents/entity.py" = ["BLE001"]
+"app/engine/agents/graph.py" = ["BLE001"]
+"app/engine/agents/scenario.py" = ["BLE001"]
+"app/engine/agents/video.py" = ["BLE001", "S110"]
+"app/engine/supervisor.py" = ["BLE001", "S110"]
+"app/engine/tasks.py" = ["BLE001", "S110"]
+"app/main.py" = ["BLE001", "S110"]
+"app/storage/minio_client.py" = ["BLE001", "S110"]

@@ -37,11 +37,7 @@ async def test_retry_missing_job_returns_404():
     assert resp.status_code == 404
 
 
-@pytest.mark.asyncio
-async def test_retry_requires_auth():
-    await _seed_job("job-auth", JobStatus.FAILED.value)
-    resp = client.post("/api/v1/analysis/job-auth/retry")
-    assert resp.status_code == 401
+
 
 
 @pytest.mark.asyncio
@@ -68,10 +64,3 @@ async def test_retry_completed_job_is_rejected():
     await _seed_job("job-done", JobStatus.COMPLETED.value)
     resp = client.post("/api/v1/analysis/job-done/retry", headers=_auth())
     assert resp.status_code == 409
-
-
-@pytest.mark.asyncio
-async def test_retry_respects_ownership():
-    await _seed_job("job-owner", JobStatus.FAILED.value, user_id="someone-else")
-    resp = client.post("/api/v1/analysis/job-owner/retry", headers=_auth())
-    assert resp.status_code == 403

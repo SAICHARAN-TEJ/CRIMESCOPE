@@ -16,9 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import math
-from collections import Counter
 from typing import Any
-from uuid import uuid4
 
 from app.core.config import get_settings
 from app.core.logger import get_logger
@@ -165,9 +163,11 @@ class ConsensusEntityExtractor(BaseAgent):
             entities=consensus_entities,
             relationships=consensus_rels,
             facts=[
-                f"Consensus: {len(consensus_entities)} entities agreed by "
-                f">={min_agree}/{successful} agents "
-                f"(from {agreement_stats['entities_before']} total extractions)"
+                (
+                    f"Consensus: {len(consensus_entities)} entities agreed by "
+                    f">={min_agree}/{successful} agents "
+                    f"(from {agreement_stats['entities_before']} total extractions)"
+                )
             ],
         )
 
@@ -204,7 +204,7 @@ class ConsensusEntityExtractor(BaseAgent):
 
         # Accept entities with sufficient agreement
         accepted: list[dict] = []
-        for (canon_name, canon_type), entries in canonical.items():
+        for entries in canonical.values():
             if len(entries) >= min_agree:
                 # Use the highest-confidence version
                 best = max(entries, key=lambda e: e.get("confidence", 0))

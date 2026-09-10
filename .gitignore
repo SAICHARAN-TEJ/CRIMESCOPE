@@ -49,3 +49,14 @@ neo4j-data/
 # ── Celery ────────────────────────────────────────────────────────────
 celerybeat-schedule
 celerybeat.pid
+
+# ── Test / build artifacts ────────────────────────────────────────────
+playwright-report/
+test-results/
+*.tsbuildinfo
+
+# ── Agent / tooling scratch ───────────────────────────────────────────
+.omo/
+.codegraph/
+.vite/
+thoughts/

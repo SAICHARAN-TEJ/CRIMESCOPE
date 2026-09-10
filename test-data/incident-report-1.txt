@@ -1,0 +1,28 @@
+# Incident Report 2026-00452
+
+## Date of Incident
+June 14, 2026
+
+## Location
+1424 Elm Street, Parking Garage Level 3, Sector B.
+
+## Reporting Officer
+Officer John Davies, Badge #4421
+
+## Incident Summary
+At approximately 22:45, a 911 call was received regarding a break-in of a vehicle at the Elm Street Parking Garage. Upon arrival at 22:52, officers found a 2024 Honda Civic, silver, with the driver's side window shattered. The owner of the vehicle, Sarah Jenkins, stated that she left the vehicle at 19:30 and returned to find the window broken and her laptop bag missing.
+
+## Evidence Collected
+- Shattered glass fragments near the driver's side door.
+- CCTV footage from the garage entrance showing a suspicious individual in a dark hoodie entering the garage at 21:15 and leaving at 21:40 carrying a bag.
+- Statement from a witness, Michael Torres, who reported hearing a loud smash around 21:30 but did not see anyone.
+
+## Persons Involved
+- **Sarah Jenkins** (Victim, Vehicle Owner)
+- **Michael Torres** (Witness)
+- **Unknown Suspect** (Male, approx 5'10", wearing dark hoodie)
+
+## Next Steps
+- Request higher resolution CCTV footage from the building management.
+- Check local pawn shops for the stolen laptop (MacBook Pro 14", Serial #XY123456).
+- Follow up with Michael Torres for any additional details.

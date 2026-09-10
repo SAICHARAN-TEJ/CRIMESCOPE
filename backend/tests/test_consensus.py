@@ -11,8 +11,6 @@ Covers:
 
 from __future__ import annotations
 
-import asyncio
-
 import pytest
 
 from app.engine.agents.consensus import ConsensusEntityExtractor, _names_match
@@ -136,7 +134,7 @@ class TestSupervisorAgentErrorEvent:
         class ExplodingAgent:
             agent_type = AgentType.ENTITY
             async def run(self, job_id, payload):
-                raise asyncio.TimeoutError("boom")
+                raise TimeoutError("boom")
 
         sup = Supervisor()
         result = await sup._run_with_timeout("entity", ExplodingAgent(), "job-err", {})
@@ -160,7 +158,7 @@ class TestSupervisorAgentErrorEvent:
         class ExplodingAgent:
             agent_type = AgentType.DOCUMENT
             async def run(self, job_id, payload):
-                raise asyncio.TimeoutError("boom")
+                raise TimeoutError("boom")
 
         sup = Supervisor()
         result = await sup._run_with_timeout("document", ExplodingAgent(), "job-err2", {})

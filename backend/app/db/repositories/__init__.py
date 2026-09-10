@@ -1,5 +1,5 @@
-"""CrimeScope — repository layer (jobs, scenarios, conversations/messages)."""
+"""CrimeScope — repository layer (jobs, scenarios, conversations, users)."""
 
-from app.db.repositories import conversations, jobs, scenarios
+from app.db.repositories import conversations, jobs, scenarios, users
 
-__all__ = ["jobs", "scenarios", "conversations"]
+__all__ = ["conversations", "jobs", "scenarios", "users"]

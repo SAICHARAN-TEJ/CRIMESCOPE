@@ -12,8 +12,9 @@ import type { UploadFile } from '@/types'
 const store = useAnalysisStore()
 
 // ── Auth ──────────────────────────────────────────────────────────────────
-const username = ref('admin')
-const password = ref('crimescope')
+// L-2: no pre-filled credentials — the admin password is env-seeded (§2).
+const username = ref('')
+const password = ref('')
 const authError = ref('')
 const isLoggingIn = ref(false)
 const isAuthed = computed(() => !!store.token)
@@ -49,7 +50,13 @@ function addFiles(files: File[]) {
 
 function onDrop(e: DragEvent) { e.preventDefault(); dragActive.value = false; addFiles(Array.from(e.dataTransfer?.files ?? [])) }
 function onFileInput(e: Event) { addFiles(Array.from((e.target as HTMLInputElement).files ?? [])) }
-function removeFile(i: number) { stagedFiles.value.splice(i, 1); delete uploadProgress.value[stagedFiles.value[i]?.name ?? ''] }
+// L-1: capture the name BEFORE splicing — the post-splice index points at
+// the *next* file, so the removed file's progress entry used to leak.
+function removeFile(i: number) {
+  const name = stagedFiles.value[i]?.name
+  stagedFiles.value.splice(i, 1)
+  if (name) delete uploadProgress.value[name]
+}
 
 function fileIcon(f: File) {
   if (f.type.startsWith('image/')) return '🖼'
@@ -85,11 +92,16 @@ async function submitJob() {
 }
 
 // ── Agent ─────────────────────────────────────────────────────────────────
+// L-3: full pipeline + swarm vocabulary — no more raw `⚙ type` fallbacks.
 const AGENT_META: Record<string, { icon: string; label: string }> = {
   video:    { icon: '🎬', label: 'Video Transcription' },
   document: { icon: '📄', label: 'Document Analysis' },
   entity:   { icon: '🔍', label: 'Entity Extraction' },
   graph:    { icon: '🕸', label: 'Knowledge Graph' },
+  persona:  { icon: '🎭', label: 'Persona Swarm' },
+  report:   { icon: '📝', label: 'Report Agent' },
+  consensus:{ icon: '⚖️', label: 'Consensus Voting' },
+  scenario: { icon: '🧪', label: 'Scenario Simulation' },
 }
 
 function agentDotClass(status: string) {
@@ -118,7 +130,7 @@ onUnmounted(disconnectWS)
           <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
         </svg>
         <span class="nav__name">CrimeScope</span>
-        <span class="eyebrow" style="margin-left:4px;opacity:.5">v4.2</span>
+        <span class="eyebrow" style="margin-left:4px;opacity:.5">v4.4</span>
       </div>
       <div class="nav__right">
         <router-link to="/demo" class="nav__demo-link" style="margin-right: 16px; color: var(--crimson); text-decoration: none; font-size: 13px;">View Demo →</router-link>
@@ -310,7 +322,7 @@ onUnmounted(disconnectWS)
           >
             <code class="log__tag">{{ ev.event }}</code>
             <span v-if="ev.agent" class="log__agent eyebrow">{{ ev.agent }}</span>
-            <span class="log__msg">{{ ev.data?.message ?? ev.data?.status ?? JSON.stringify(ev.data).slice(0, 80) }}</span>
+            <span class="log__msg">{{ ev.data?.message ?? ev.data?.status ?? (ev.data && Object.keys(ev.data).length ? JSON.stringify(ev.data).slice(0, 80) : '—') }}</span>
           </div>
         </template>
         <p v-else class="log__empty eyebrow">Awaiting events…</p>

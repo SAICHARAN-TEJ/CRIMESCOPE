@@ -31,6 +31,63 @@ from app.schemas.events import AgentResult, AgentType, EventType, WSEvent
 logger = get_logger("crimescope.agent.base")
 
 
+# ── LLM Message Role Allowlist (L5b) ─────────────────────────────────────
+
+
+class LLMMessageRoles:
+    """Namespace for the LLM message-role allowlist (L5b).
+
+    Only these roles may enter an LLM message chain. Anything else —
+    free-form roles like 'agent' (legacy persisted vocabulary) or attacker-
+    injected roles like 'system-override' — is either normalized to a safe
+    role or dropped at the agent/report boundary, never forwarded upstream.
+    """
+
+    SYSTEM = "system"
+    USER = "user"
+    ASSISTANT = "assistant"
+
+    #: Complete allowlist for membership checks.
+    ALL: frozenset[str] = frozenset({SYSTEM, USER, ASSISTANT})
+
+    @classmethod
+    def normalize(cls, role: Any) -> str | None:
+        """Map a raw role onto the allowlist.
+
+        - 'agent' (legacy persisted vocabulary, §15) → 'assistant'
+        - explicit allowlisted roles pass through unchanged (case-folded)
+        - anything else → None (caller must drop the message)
+        """
+        if not isinstance(role, str):
+            return None
+        folded = role.strip().lower()
+        if folded == "agent":  # legacy vocabulary (router pre-L4)
+            return cls.ASSISTANT
+        if folded in cls.ALL:
+            return folded
+        return None
+
+
+def sanitize_llm_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Enforce the L5b allowlist on a built message chain.
+
+    System prompts authored by the engine itself are exempt (they are
+    constructed from constants, not user input) — only dynamically sourced
+    roles (persisted conversation history, upstream payloads) are checked.
+    Unknown-role messages are dropped, not coerced, so a malformed or
+    hostile role can never reach the LLM provider.
+    """
+    sanitized: list[dict[str, Any]] = []
+    for msg in messages:
+        if not isinstance(msg, dict):
+            continue
+        role = LLMMessageRoles.normalize(msg.get("role"))
+        if role is None:
+            continue
+        sanitized.append({"role": role, "content": msg.get("content", "")})
+    return sanitized
+
+
 # ── Custom Exceptions ─────────────────────────────────────────────────────
 
 
@@ -45,7 +102,6 @@ class DataIntegrityError(Exception):
 
 class ChaosError(Exception):
     """Injected failure for resilience testing (only in chaos mode)."""
-    pass
 
 
 # ── Circuit Breaker ───────────────────────────────────────────────────────

@@ -1,0 +1,16 @@
+# Keep the backend image build context clean.
+# Intentionally NOT excluded (needed in the image):
+#   app/, alembic/, alembic.ini, entrypoint.sh, celery_config.py, pyproject.toml
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+tests/
+.env
+.env.*
+*.log
+logs/
+.git/
+_check_env.py

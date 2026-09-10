@@ -123,7 +123,11 @@ def wait_api_healthy(timeout: float = TIMEOUT_SECONDS) -> None:
 
 
 def login() -> str:
-    code, body = http_request("POST", f"{API}/auth/token", {"username": "admin", "password": "crimescope"})
+    creds = {
+        "username": os.getenv("ADMIN_USERNAME", "admin"),
+        "password": os.getenv("ADMIN_PASSWORD", "crimescope"),
+    }
+    code, body = http_request("POST", f"{API}/auth/token", creds)
     if code != 200:
         raise AssertionError(f"Login failed: {code} {body}")
     log("Auth: JWT obtained")

@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import json
 from typing import Any
-from uuid import uuid4
 
 import httpx
 
@@ -24,7 +23,7 @@ from app.core.config import get_settings
 from app.core.logger import get_logger
 from app.core.redis_client import get_redis
 from app.core.security import sanitize_input
-from app.engine.agents.base import BaseAgent
+from app.engine.agents.base import BaseAgent, LLMMessageRoles
 from app.schemas.events import AgentResult, AgentType, EventType, WSEvent
 
 logger = get_logger("crimescope.agent.report")
@@ -124,9 +123,11 @@ class ReportAgent(BaseAgent):
             agent=self.agent_type,
             success=True,
             facts=[
-                f"Report generated: {len(report_data.get('key_findings', []))} findings, "
-                f"{len(report_data.get('timeline', []))} timeline events, "
-                f"confidence: {report_data.get('confidence', 0):.0%}"
+                (
+                    f"Report generated: {len(report_data.get('key_findings', []))} findings, "
+                    f"{len(report_data.get('timeline', []))} timeline events, "
+                    f"confidence: {report_data.get('confidence', 0):.0%}"
+                )
             ],
             entities=[{
                 "type": "report",
@@ -193,16 +194,27 @@ class ReportAgent(BaseAgent):
         question: str,
         conversation_history: list[dict],
     ) -> list[dict]:
-        """Build the LLM message chain with system prompt, context, and history."""
+        """Build the LLM message chain with system prompt, context, and history.
+
+        L5b: history roles are restricted to the explicit allowlist
+        (system/user/assistant). The legacy persisted role 'agent' is
+        normalized to 'assistant'; any other role is dropped — never
+        forwarded to the LLM provider.
+        """
         messages = [{"role": "system", "content": _REPORT_SYSTEM_PROMPT}]
 
-        # Add conversation history (last 10 exchanges)
+        # Add conversation history (last 10 exchanges, role-allowlisted)
         for exchange in conversation_history[-10:]:
-            if exchange.get("role") and exchange.get("content"):
-                messages.append({
-                    "role": exchange["role"],
-                    "content": sanitize_input(str(exchange["content"]))[:2000],
-                })
+            if not isinstance(exchange, dict):
+                continue
+            role = LLMMessageRoles.normalize(exchange.get("role"))
+            content = exchange.get("content")
+            if role is None or not content:
+                continue
+            messages.append({
+                "role": role,
+                "content": sanitize_input(str(content))[:2000],
+            })
 
         # Current question with context
         user_msg = f"CASE CONTEXT:\n{context[:6000]}\n\nINVESTIGATION QUESTION:\n{question}"

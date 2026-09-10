@@ -32,6 +32,7 @@ from starlette.websockets import WebSocketState
 from app.core.logger import get_logger
 from app.core.redis_client import get_redis
 from app.core.security import validate_ws_token
+from app.db import repositories
 
 router = APIRouter()
 logger = get_logger("crimescope.websocket")
@@ -74,17 +75,17 @@ async def analysis_websocket(websocket: WebSocket, job_id: str):
         await websocket.close(code=4003, reason="Invalid job_id format")
         return
 
-    # ── Step 1: Validate JWT from query param ────────────────────────
-    token = websocket.query_params.get("token")
-    if not token:
-        await websocket.close(code=4001, reason="Missing authentication token")
-        return
-
+    # ── Step 1: Validate the query token before accepting the socket ─────
+    token = websocket.query_params.get("token", "")
     try:
         user = validate_ws_token(token)
-        user_id = user.get("sub", "unknown")
-    except Exception as e:
-        await websocket.close(code=4001, reason=f"Authentication failed: {e}")
+    except Exception:
+        await websocket.close(code=4401, reason="Invalid authentication credentials")
+        return
+    user_id = user["sub"]
+    job = await repositories.jobs.get(job_id)
+    if job is None or job.user_id != user_id:
+        await websocket.close(code=4403, reason="Access denied")
         return
 
     # ── Step 2: Enforce connection limit ──────────────────────────────
@@ -150,15 +151,14 @@ async def analysis_websocket(websocket: WebSocket, job_id: str):
                     if _ws_is_open(websocket):
                         await _send_json(websocket, event)
                 else:
+                    should_flush = False
                     async with buffer_lock:
                         event_buffer.append(event)
                         # Cap buffer to prevent memory blowout
                         if len(event_buffer) >= MAX_BUFFER_SIZE:
-                            overflow = event_buffer.copy()
-                            event_buffer.clear()
-                    # Force flush if buffer hit cap (outside lock)
-                    if len(event_buffer) == 0 and 'overflow' in dir():
-                        pass  # Will be flushed by _batch_flusher
+                            should_flush = True
+                    if should_flush:
+                        await _flush_buffer()
 
                 if event_type == "PIPELINE_COMPLETE":
                     await _flush_buffer()
@@ -213,9 +213,12 @@ async def analysis_websocket(websocket: WebSocket, job_id: str):
                 # Safe JSON parse
                 try:
                     msg = json.loads(data)
-                    if isinstance(msg, dict) and msg.get("type") == "ping":
-                        if _ws_is_open(websocket):
-                            await _send_json(websocket, {"type": "pong"})
+                    if (
+                        isinstance(msg, dict)
+                        and msg.get("type") == "ping"
+                        and _ws_is_open(websocket)
+                    ):
+                        await _send_json(websocket, {"type": "pong"})
                 except (json.JSONDecodeError, TypeError, ValueError):
                     pass
         except WebSocketDisconnect:
@@ -257,11 +260,6 @@ async def analysis_websocket(websocket: WebSocket, job_id: str):
             pass
 
         # 3. Unsubscribe from Redis (CRITICAL — prevents memory leak)
-        try:
-            if subscription is not None and hasattr(subscription, "aclose"):
-                await subscription.aclose()
-        except Exception:
-            pass
         try:
             await redis.unsubscribe(job_id)
         except Exception:

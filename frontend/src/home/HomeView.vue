@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, onUnmounted, ref } from 'vue'
 import './home-theme.css'
 
 const intersectionObserver = ref<IntersectionObserver | null>(null)
@@ -16,6 +16,12 @@ onMounted(() => {
   document.querySelectorAll('.anim-scroll').forEach(el => {
     intersectionObserver.value?.observe(el)
   })
+})
+
+// M-9: release observed (later detached) DOM nodes on navigation.
+onUnmounted(() => {
+  intersectionObserver.value?.disconnect()
+  intersectionObserver.value = null
 })
 </script>
 
@@ -94,8 +100,8 @@ onMounted(() => {
             <p>Test alternate theories safely. Inject a hypothesis and watch the swarm assess the blast radius.</p>
           </div>
           <div class="cap-item">
-            <h4>Long-term case memory</h4>
-            <p>Every analysis builds on the last. CrimeScope never forgets a connection.</p>
+            <h4>Cross-case graph recall</h4>
+            <p>Entities merge into a shared knowledge graph, so connections from earlier cases resurface in new investigations.</p>
           </div>
           <div class="cap-item">
             <h4>Persona materialization</h4>

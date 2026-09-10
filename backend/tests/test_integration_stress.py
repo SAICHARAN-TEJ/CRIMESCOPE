@@ -8,13 +8,11 @@ Run: python tests/test_integration_stress.py
 """
 
 import asyncio
-import json
 import os
 import sys
-import tempfile
 import time
 from pathlib import Path
-from unittest.mock import MagicMock, AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 # Add backend to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -267,8 +265,8 @@ class ForensicTestRunner:
     async def test_guardian_input_validation(self):
         t = time.time()
         from app.engine.agents.base import DataIntegrityError
-        from app.engine.agents.video import VideoAgent
         from app.engine.agents.document import DocumentAgent
+        from app.engine.agents.video import VideoAgent
 
         tests_passed = 0
 
@@ -606,8 +604,8 @@ class ForensicTestRunner:
         t = time.time()
         from app.engine.agents.base import (
             _push_to_dead_letter,
-            get_inmemory_dlq,
             clear_inmemory_dlq,
+            get_inmemory_dlq,
         )
 
         # Clear any previous entries
@@ -740,8 +738,8 @@ class ForensicTestRunner:
 
     async def test_video_agent_no_files(self):
         t = time.time()
-        from app.engine.agents.video import VideoAgent
         import app.core.redis_client as redis_module
+        from app.engine.agents.video import VideoAgent
 
         agent = VideoAgent()
 
@@ -773,8 +771,8 @@ class ForensicTestRunner:
 
     async def test_malformed_payloads(self):
         t = time.time()
-        from app.engine.agents.document import DocumentAgent
         import app.core.redis_client as redis_module
+        from app.engine.agents.document import DocumentAgent
 
         agent = DocumentAgent()
 

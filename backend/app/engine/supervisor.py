@@ -25,12 +25,17 @@ from typing import Any
 from app.core.config import get_settings
 from app.core.logger import get_logger
 from app.core.redis_client import get_redis
+from app.engine.agents.consensus import ConsensusEntityExtractor
 from app.engine.agents.entity import EntityAgent
 from app.engine.agents.graph import GraphAgent
 from app.engine.agents.persona import PersonaAgent, get_default_personas
-from app.engine.agents.consensus import ConsensusEntityExtractor
 from app.schemas.events import (
-    AgentResult, AgentType, EventType, JobStatus, PipelineResult, WSEvent,
+    AgentResult,
+    AgentType,
+    EventType,
+    JobStatus,
+    PipelineResult,
+    WSEvent,
 )
 
 logger = get_logger("crimescope.engine.supervisor")
@@ -39,6 +44,30 @@ logger = get_logger("crimescope.engine.supervisor")
 AGENT_TIMEOUT = 120  # seconds
 CELERY_POLL_INTERVAL = 0.5  # seconds between result checks
 CELERY_MAX_WAIT = 300  # max wait for Celery task (5 min)
+
+
+def _with_job_attempt(data: dict[str, Any], attempt: int | None) -> dict[str, Any]:
+    """Attach the §11 job attempt to event metadata when present (L5a).
+
+    Published under "job_attempt" — agent events already use "attempt" for
+    the agent-internal retry count.
+    """
+    if attempt is not None:
+        return {**data, "job_attempt": attempt}
+    return data
+
+
+def _delay_with_attempt(
+    task: Any, job_id: str, file_meta: dict[str, Any], attempt: int | None
+) -> Any:
+    """Dispatch a Celery task, attaching the job attempt only when present (L5a).
+
+    When attempt is None the argument is omitted entirely (not passed as
+    None) so the wire call stays byte-compatible with pre-L5a workers.
+    """
+    if attempt is None:
+        return task.delay(job_id, file_meta)
+    return task.delay(job_id, file_meta, attempt)
 
 
 class Supervisor:
@@ -55,7 +84,13 @@ class Supervisor:
         self.graph_agent = GraphAgent()
         self.consensus_agent = ConsensusEntityExtractor()
 
-    async def run(self, job_id: str, files: list[dict[str, Any]], question: str = "") -> PipelineResult:
+    async def run(
+        self,
+        job_id: str,
+        files: list[dict[str, Any]],
+        question: str = "",
+        attempt: int | None = None,
+    ) -> PipelineResult:
         """
         Execute the full analysis pipeline.
 
@@ -63,6 +98,10 @@ class Supervisor:
             job_id: Unique job identifier for event correlation.
             files: List of uploaded file metadata (object_key, filename, content_type).
             question: Optional user question for context.
+            attempt: Optional §11 job attempt (retry fence). Propagated to
+                Celery task payloads and agent payloads so a stale worker
+                can be identified by its attempt metadata. None keeps the
+                pre-L5a behavior (no attempt tracking).
 
         Returns:
             PipelineResult with all agent results and aggregate stats.
@@ -70,6 +109,8 @@ class Supervisor:
         redis = get_redis()
         start = time.time()
         payload: dict[str, Any] = {"files": files, "question": question}
+        if attempt is not None:
+            payload["attempt"] = attempt
         agent_results: list[AgentResult] = []
 
         # ── Publish job start ────────────────────────────────────────
@@ -77,7 +118,9 @@ class Supervisor:
             await redis.publish_event(job_id, WSEvent(
                 event=EventType.JOB_STARTED,
                 job_id=job_id,
-                data={"file_count": len(files), "question": question},
+                data=_with_job_attempt(
+                    {"file_count": len(files), "question": question}, attempt
+                ),
             ).model_dump())
         except Exception as e:
             logger.warning(f"[Supervisor] Failed to publish JOB_STARTED: {e}")
@@ -89,11 +132,13 @@ class Supervisor:
 
         text_chunks: list[str] = []
         try:
-            celery_results, phase1_chunks = await self._dispatch_celery_tasks(job_id, files)
+            celery_results, phase1_chunks = await self._dispatch_celery_tasks(
+                job_id, files, attempt
+            )
             agent_results.extend(celery_results)
             text_chunks.extend(phase1_chunks)
         except Exception as e:
-            logger.error(f"[Supervisor] Phase 1 failed entirely: {e}", exc_info=True)
+            logger.exception("[Supervisor] Phase 1 failed entirely")
             agent_results.append(AgentResult(
                 agent=AgentType.DOCUMENT,
                 success=False,
@@ -160,7 +205,7 @@ class Supervisor:
                 )
                 agent_results.extend(persona_results)
             except Exception as e:
-                logger.error(f"[Supervisor] Phase 4 (personas) failed: {e}", exc_info=True)
+                logger.exception("[Supervisor] Phase 4 (personas) failed")
                 agent_results.append(AgentResult(
                     agent=AgentType.PERSONA,
                     success=False,
@@ -186,12 +231,15 @@ class Supervisor:
             await redis.publish_event(job_id, WSEvent(
                 event=EventType.PIPELINE_COMPLETE,
                 job_id=job_id,
-                data={
-                    "status": status.value,
-                    "total_entities": total_entities,
-                    "total_relationships": total_rels,
-                    "processing_time_ms": elapsed,
-                },
+                data=_with_job_attempt(
+                    {
+                        "status": status.value,
+                        "total_entities": total_entities,
+                        "total_relationships": total_rels,
+                        "processing_time_ms": elapsed,
+                    },
+                    attempt,
+                ),
             ).model_dump())
         except Exception as e:
             logger.warning(f"[Supervisor] Failed to publish PIPELINE_COMPLETE: {e}")
@@ -214,19 +262,25 @@ class Supervisor:
         self,
         job_id: str,
         files: list[dict[str, Any]],
+        attempt: int | None = None,
     ) -> tuple[list[AgentResult], list[str]]:
         """
         Dispatch video/document files to Celery workers and await results IN PARALLEL.
+
+        Args:
+            job_id: Pipeline job ID for event correlation.
+            files: Uploaded file metadata list.
+            attempt: Optional §11 job attempt (L5a) — forwarded to task payloads.
 
         Returns:
             (agent_results, text_chunks) — results and any text extracted by workers.
         """
         try:
-            from app.engine.tasks import process_video, process_document
+            from app.engine.tasks import process_document, process_video
         except ImportError as e:
             # Celery not available — fallback to in-process agents
             logger.warning(f"[Supervisor] Celery import failed: {e}. Falling back to in-process.")
-            return await self._fallback_in_process(job_id, files)
+            return await self._fallback_in_process(job_id, files, attempt)
 
         pending: list[tuple[str, Any, dict[str, Any]]] = []
 
@@ -236,10 +290,10 @@ class Supervisor:
 
             try:
                 if content_type.startswith("video/") or filename.lower().endswith((".mp4", ".avi", ".mov")):
-                    task = process_video.delay(job_id, file_meta)
+                    task = _delay_with_attempt(process_video, job_id, file_meta, attempt)
                     pending.append(("video", task, file_meta))
                 else:
-                    task = process_document.delay(job_id, file_meta)
+                    task = _delay_with_attempt(process_document, job_id, file_meta, attempt)
                     pending.append(("document", task, file_meta))
             except Exception as e:
                 logger.error(f"[Supervisor] Failed to dispatch task for {filename}: {e}")
@@ -367,6 +421,7 @@ class Supervisor:
         self,
         job_id: str,
         files: list[dict[str, Any]],
+        attempt: int | None = None,
     ) -> tuple[list[AgentResult], list[str]]:
         """
         Fallback: run video/document agents in-process when Celery is unavailable.
@@ -378,6 +433,8 @@ class Supervisor:
         video_agent = VideoAgent()
         doc_agent = DocumentAgent()
         payload: dict[str, Any] = {"files": files}
+        if attempt is not None:
+            payload["attempt"] = attempt
 
         results: list[AgentResult] = []
         text_chunks: list[str] = []
@@ -390,7 +447,7 @@ class Supervisor:
                     timeout=AGENT_TIMEOUT,
                 )
                 results.append(result)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 await self._publish_agent_error(job_id, agent.agent_type, f"{name} timed out (in-process fallback)")
                 results.append(AgentResult(
                     agent=agent.agent_type,
@@ -422,30 +479,47 @@ class Supervisor:
         Supervisor-level failures (timeout/crash) publish an AGENT_ERROR
         event so the frontend always sees why an agent did not complete —
         the agent's own handler may be cancelled before it can publish.
+
+        The §11 job attempt (L5a), when present in the payload, is attached
+        to the AGENT_ERROR metadata as "job_attempt" so stale-attempt runs
+        are identifiable in the event stream.
         """
+        attempt = payload.get("attempt") if isinstance(payload, dict) else None
+        if attempt is not None and not isinstance(attempt, int):
+            attempt = None
         try:
             return await asyncio.wait_for(
                 agent.run(job_id, payload),
                 timeout=AGENT_TIMEOUT,
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.warning(f"Agent {name} timed out after {AGENT_TIMEOUT}s")
-            await self._publish_agent_error(job_id, agent.agent_type, f"{name} timed out after {AGENT_TIMEOUT}s")
+            await self._publish_agent_error(
+                job_id, agent.agent_type, f"{name} timed out after {AGENT_TIMEOUT}s", attempt
+            )
             return AgentResult(
                 agent=agent.agent_type,
                 success=False,
                 error=f"{name} timed out after {AGENT_TIMEOUT}s",
             )
         except Exception as e:
-            logger.error(f"Agent {name} crashed: {e}", exc_info=True)
-            await self._publish_agent_error(job_id, agent.agent_type, f"{name} crashed: {e}")
+            logger.exception(f"Agent {name} crashed")
+            await self._publish_agent_error(
+                job_id, agent.agent_type, f"{name} crashed: {e}", attempt
+            )
             return AgentResult(
                 agent=agent.agent_type,
                 success=False,
                 error=str(e),
             )
 
-    async def _publish_agent_error(self, job_id: str, agent_type: AgentType, message: str) -> None:
+    async def _publish_agent_error(
+        self,
+        job_id: str,
+        agent_type: AgentType,
+        message: str,
+        attempt: int | None = None,
+    ) -> None:
         """Best-effort AGENT_ERROR event — never raises (Redis may be down)."""
         try:
             redis = get_redis()
@@ -453,7 +527,10 @@ class Supervisor:
                 event=EventType.AGENT_ERROR,
                 job_id=job_id,
                 agent=agent_type,
-                data={"error": message, "recoverable": True, "type": "AGENT_FAILED"},
+                data=_with_job_attempt(
+                    {"error": message, "recoverable": True, "type": "AGENT_FAILED"},
+                    attempt,
+                ),
             ).model_dump())
         except Exception as e:
             logger.warning(f"Failed to publish AGENT_ERROR for {job_id}: {e}")
@@ -508,4 +585,3 @@ class Supervisor:
                 agent_results.append(result)
 
         return agent_results
-

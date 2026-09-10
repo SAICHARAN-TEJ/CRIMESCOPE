@@ -29,9 +29,11 @@ export enum EventType {
   PIPELINE_COMPLETE = "PIPELINE_COMPLETE",
   HEARTBEAT = "HEARTBEAT",
   CONNECTED = "CONNECTED",
+  BATCH_UPDATE = "BATCH_UPDATE",
   PERSONA_INSIGHT = "PERSONA_INSIGHT",
   REPORT_CHUNK = "REPORT_CHUNK",
   CONSENSUS_RESULT = "CONSENSUS_RESULT",
+  SCENARIO_EVAL = "SCENARIO_EVAL",
   SCENARIO_DIFF = "SCENARIO_DIFF",
 }
 
@@ -90,21 +92,36 @@ export interface PersonaProfile {
   bias?: string;
 }
 
+/** PERSONA_INSIGHT event payload (§14 final vocabulary). */
 export interface PersonaInsight {
   persona_id: string;
   persona_name: string;
   insight: string;
   confidence: number;
-  nodes_referenced: string[];
+  evidence_refs?: string[];
+  nodes_referenced?: string[];
 }
 
-export interface ReportChunk {
-  content: string;
+/** A single persona's evaluation of a scenario hypothesis. */
+export interface ScenarioEvaluation {
+  persona_name: string;
+  verdict: string; // supports | contradicts | neutral
+  reasoning: string;
+  confidence: number;
 }
 
-export interface ChatMessage {
-  role: "user" | "agent" | string;
-  content: string;
+/**
+ * SCENARIO_DIFF payload (§14 final vocabulary).
+ * `insights` are derived client-side from `evaluations`.
+ */
+export interface ScenarioDiff {
+  scenario_id: string;
+  consensus_verdict?: string; // supports | contradicts | neutral | mixed | pending
+  new_entities: GraphNode[];
+  new_edges: GraphEdge[];
+  removed_edges?: GraphEdge[];
+  evaluations?: ScenarioEvaluation[];
+  insights: string[];
 }
 
 export interface ConsensusResult {
@@ -113,11 +130,10 @@ export interface ConsensusResult {
   synthesis: string;
 }
 
-export interface ScenarioDiff {
-  scenario_id: string;
-  nodes_added: GraphNode[];
-  edges_added: GraphEdge[];
-  insights: string[];
+/** Chat roles are pinned to "assistant" (§15) — never "agent". */
+export interface ChatMessage {
+  role: "user" | "assistant";
+  content: string;
 }
 
 // ── API Types ────────────────────────────────────────────────────────────
@@ -150,6 +166,33 @@ export interface JobResponse {
   job_id: string;
   status: JobStatus;
   ws_url: string;
+}
+
+/** Response from POST /chat (ChatResponse in the backend schema). */
+export interface ChatResponse {
+  conversation_id: string;
+  message: string;
+  sources: string[];
+  confidence: number;
+  persona_id?: string | null;
+}
+
+/** A materialized graph-entity persona from POST /analysis/{job_id}/personas. */
+export interface MaterializedPersona {
+  persona_id: string;
+  name: string;
+  role: string;
+  evidence_refs: string[];
+  grounded_nodes: number;
+  statements: string[];
+}
+
+/** Response from POST /analysis/{job_id}/personas (PersonaMaterializeResponse). */
+export interface PersonaMaterializeResponse {
+  job_id: string;
+  personas: MaterializedPersona[];
+  count: number;
+  total_person_nodes: number;
 }
 
 // ── Vis.js Node/Edge (for vis-network) ───────────────────────────────────

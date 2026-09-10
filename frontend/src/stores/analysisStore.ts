@@ -1,5 +1,5 @@
 /**
- * CrimeScope — Pinia Analysis Store (Antigravity-Hardened v4.2).
+ * CrimeScope — Pinia Analysis Store.
  *
  * Central state management for the analysis pipeline:
  *   - Agent statuses (idle → running → complete/error)
@@ -7,21 +7,20 @@
  *   - Pipeline status and error tracking
  *   - WebSocket event handlers
  *
- * v4.2 Self-Healing Additions:
- *   - Error Boundary: Catches + isolates WS handler crashes
- *   - Message Validator: Rejects malformed/tampered WS events
- *   - Recoverable Error Tracking: Agents tagged "recoverable" get retry buttons
- *   - Agent Retry Action: Re-dispatches failed agents from the frontend
- *   - Corruption Detector: Detects duplicate node IDs, orphaned edges, etc.
- *
- * Hardened against:
- *   - 500+ nodes arriving in 1 second (throttled graph updates, max 10/sec)
- *   - Out-of-order events (edge before node → deferred edge queue)
- *   - Unbounded eventLog growth (capped at 1000 entries)
- *   - Null/undefined event.data access (safe property access everywhere)
- *   - O(n²) array spread (in-place push with batched reactivity trigger)
- *   - Malformed WebSocket messages (validated before processing)
- *   - Handler exceptions (error boundary prevents store corruption)
+ * Hardening notes (v4.4 wave):
+ *   - C-1: demo mode is an internal `isDemo` branch — store actions are NEVER
+ *     reassigned, so visiting /demo then /app leaves the real store intact.
+ *   - H-1: REPORT_CHUNK reads `data.chunk`/`data.complete` (backend sends the
+ *     full report in ONE terminal event) with `content`/`done` fallback for the
+ *     demo controller. The HTTP ChatResponse is consumed directly and
+ *     de-duplicated against the WS delivery.
+ *   - H-2: SCENARIO_DIFF maps the §14 vocabulary (new_entities/new_edges,
+ *     new_relationships fallback) and derives insights from evaluations.
+ *   - H-3: materializePersonas consumes the POST /analysis/{job_id}/personas
+ *     response (PersonaMaterializeResponse) — NOT the /personas config listing.
+ *   - conversation_id from ChatResponse is persisted and sent back on
+ *     subsequent chat calls so the ReportAgent keeps its history context.
+ *   - Chat roles are pinned to "assistant" (§15).
  */
 
 import { defineStore } from "pinia";
@@ -37,8 +36,12 @@ import type {
   VisEdge,
   WSEvent,
   ChatMessage,
+  ChatResponse,
   PersonaProfile,
+  PersonaInsight,
+  PersonaMaterializeResponse,
   ScenarioDiff,
+  ScenarioEvaluation,
 } from "@/types";
 import * as api from "@/api";
 
@@ -46,13 +49,35 @@ import * as api from "@/api";
 const MAX_EVENT_LOG = 1000;          // Cap eventLog to prevent memory leak
 const GRAPH_UPDATE_MIN_INTERVAL = 100; // ms — max 10 reactive graph updates/sec
 const MAX_DEFERRED_EDGES = 5000;     // Cap deferred edge queue
-const MAX_RETRY_ATTEMPTS = 3;        // Max retries per agent from frontend
-const VALID_EVENT_TYPES = new Set([
+
+/**
+ * Structural contract the demo route registers via setDemoController().
+ * Declared here (not imported from src/demo) so the store — which lives in
+ * the entry chunk — never statically reaches demo fixtures.
+ */
+export interface DemoSwarmController {
+  sendChat(message: string): void | Promise<void>;
+  injectScenario(hypothesis: string): void | Promise<void>;
+  materializePersonas(): void | Promise<void>;
+}
+
+const VALID_EVENT_TYPES = new Set<string>([
   "CONNECTED", "JOB_STARTED", "AGENT_START", "AGENT_PROGRESS",
   "AGENT_COMPLETE", "AGENT_ERROR", "GRAPH_NODE_ADD", "GRAPH_EDGE_ADD",
   "PIPELINE_COMPLETE", "HEARTBEAT", "BATCH_UPDATE",
-  "PERSONA_INSIGHT", "REPORT_CHUNK", "CONSENSUS_RESULT", "SCENARIO_DIFF"
+  "PERSONA_INSIGHT", "REPORT_CHUNK", "CONSENSUS_RESULT",
+  "SCENARIO_EVAL", "SCENARIO_DIFF",
 ]);
+
+// ── XSS helper (H-6) ──────────────────────────────────────────────────────
+// vis-network renders string `title` tooltips via innerHTML, and node labels
+// are LLM-derived text — escape every interpolated field.
+const _HTML_ESCAPES: Record<string, string> = {
+  "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+};
+function _escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, (c) => _HTML_ESCAPES[c] ?? c);
+}
 
 export const useAnalysisStore = defineStore("analysis", () => {
   // ── State ──────────────────────────────────────────────────────────
@@ -76,6 +101,15 @@ export const useAnalysisStore = defineStore("analysis", () => {
   const chatMessages = ref<ChatMessage[]>([]);
   const activeReportChunk = ref<string>("");
   const scenarios = ref<ScenarioDiff[]>([]);
+  /** Live per-persona SCENARIO_EVAL payloads (also mirrored in each SCENARIO_DIFF). */
+  const scenarioEvals = ref<ScenarioEvaluation[]>([]);
+  /** Persisted conversation id from the ChatResponse — sent back on every chat call. */
+  const conversationId = ref<string>("");
+
+  // ── Demo mode (C-1) ────────────────────────────────────────────────
+  // Non-reactive on purpose: only the registration lifecycle matters.
+  let demoController: DemoSwarmController | null = null;
+  const isDemo = computed(() => demoController !== null);
 
   // ── Self-Healing State ─────────────────────────────────────────────
   const recoverableErrors = ref<Map<string, { error: string; attempts: number; recoverable: boolean }>>(new Map());
@@ -100,7 +134,9 @@ export const useAnalysisStore = defineStore("analysis", () => {
         id: n.id,
         label: n.label,
         group: n.type,
-        title: `${n.type}: ${n.label}${conf > 0 ? ` (${(conf * 100).toFixed(0)}%)` : ""}`,
+        // H-6: labels/types are LLM-derived and rendered via innerHTML in
+        // vis tooltips — escape before interpolating.
+        title: `${_escapeHtml(_safeStr(n.type, "unknown"))}: ${_escapeHtml(_safeStr(n.label, n.id))}${conf > 0 ? ` (${(conf * 100).toFixed(0)}%)` : ""}`,
         size: conf > 0 ? Math.max(12, Math.round(conf * 30)) : 18,
       };
     })
@@ -118,27 +154,21 @@ export const useAnalysisStore = defineStore("analysis", () => {
 
   const isConnected = ref(false);
 
-  /** Agents that failed with recoverable=true and haven't exhausted retries */
-  const retryableAgents = computed(() => {
-    const result: { type: string; error: string; attemptsLeft: number }[] = [];
-    for (const [agentType, info] of recoverableErrors.value.entries()) {
-      if (info.recoverable && info.attempts < MAX_RETRY_ATTEMPTS) {
-        result.push({
-          type: agentType,
-          error: info.error,
-          attemptsLeft: MAX_RETRY_ATTEMPTS - info.attempts,
-        });
-      }
-    }
-    return result;
-  });
-
   const scenarioDiffs = computed(() => scenarios.value);
 
   // ── Actions ────────────────────────────────────────────────────────
 
   function setToken(t: string) {
     token.value = t;
+  }
+
+  /**
+   * C-1: register/unregister the demo controller. Actions branch on it
+   * internally — they are never reassigned, so the real /app flows keep
+   * working after visiting /demo.
+   */
+  function setDemoController(controller: DemoSwarmController | null) {
+    demoController = controller;
   }
 
   function startJob(id: string) {
@@ -163,6 +193,8 @@ export const useAnalysisStore = defineStore("analysis", () => {
     chatMessages.value = [];
     activeReportChunk.value = "";
     scenarios.value = [];
+    scenarioEvals.value = [];
+    conversationId.value = "";
     if (pendingGraphFlush) {
       clearTimeout(pendingGraphFlush);
       pendingGraphFlush = null;
@@ -295,15 +327,17 @@ export const useAnalysisStore = defineStore("analysis", () => {
         personaInsights.value.push(event?.data);
         break;
 
+      // H-1: backend emits {chunk: <full report>, complete: true} in ONE
+      // terminal event; `content`/`done` are kept as demo-compat fallback.
       case "REPORT_CHUNK": {
-        const content = _safeStr(event?.data?.content);
-        if (content) {
-          activeReportChunk.value += content;
-        } else if (event?.data?.done) {
+        const chunk = _safeStr(event?.data?.chunk ?? event?.data?.content);
+        if (chunk) activeReportChunk.value += chunk;
+        if (event?.data?.complete ?? event?.data?.done) {
           if (activeReportChunk.value) {
-            chatMessages.value.push({ role: 'agent', content: activeReportChunk.value });
+            _pushAssistantMessageOnce(activeReportChunk.value);
             activeReportChunk.value = "";
           }
+          swarmState.value = "idle";
         }
         break;
       }
@@ -313,9 +347,40 @@ export const useAnalysisStore = defineStore("analysis", () => {
         personaInsights.value.push({ type: 'consensus', ...event?.data });
         break;
 
-      case "SCENARIO_DIFF":
-        scenarios.value.push(event?.data as unknown as ScenarioDiff);
+      // M-1: per-persona scenario verdicts — surfaced in ScenarioOverlay
+      // (the SCENARIO_DIFF carries the same evaluations).
+      case "SCENARIO_EVAL": {
+        const d = event?.data;
+        if (d && typeof d === "object") {
+          scenarioEvals.value.push({
+            persona_name: _safeStr((d as any).persona_name, "persona"),
+            verdict: _safeStr((d as any).verdict, "neutral"),
+            reasoning: _safeStr((d as any).reasoning, ""),
+            confidence: _safeNumber((d as any).confidence, 0),
+          });
+        }
         break;
+      }
+
+      // H-2: §14 final vocabulary — new_entities/new_edges with
+      // new_relationships/removed_relationships fallbacks; insights are
+      // derived client-side from evaluations.
+      case "SCENARIO_DIFF": {
+        const d = (event?.data ?? {}) as Record<string, unknown>;
+        const evals = (Array.isArray(d.evaluations) ? d.evaluations : []) as ScenarioEvaluation[];
+        scenarios.value.push({
+          scenario_id: _safeStr(d.scenario_id, ""),
+          consensus_verdict: typeof d.consensus_verdict === "string" ? d.consensus_verdict : undefined,
+          new_entities: (d.new_entities ?? []) as GraphNode[],
+          new_edges: (d.new_edges ?? d.new_relationships ?? []) as GraphEdge[],
+          removed_edges: (d.removed_edges ?? d.removed_relationships ?? []) as GraphEdge[],
+          evaluations: evals,
+          insights: evals.map((e) =>
+            `${_safeStr(e.persona_name, "persona")}: ${_safeStr(e.verdict, "neutral")} — ${_safeStr(e.reasoning, "")}`
+          ),
+        });
+        break;
+      }
 
       case "HEARTBEAT":
         break;
@@ -323,6 +388,13 @@ export const useAnalysisStore = defineStore("analysis", () => {
       default:
         break;
     }
+  }
+
+  /** Push an assistant message, skipping when the same text was already delivered (HTTP vs WS de-dupe). */
+  function _pushAssistantMessageOnce(content: string): void {
+    const last = chatMessages.value[chatMessages.value.length - 1];
+    if (last && last.role === "assistant" && last.content === content) return;
+    chatMessages.value.push({ role: "assistant", content });
   }
 
   // ── Batch Update Handler ───────────────────────────────────────────
@@ -504,7 +576,7 @@ export const useAnalysisStore = defineStore("analysis", () => {
     agent.error = _safeStr(event?.data?.error, "Unknown error");
     agents.value.set(agentType, { ...agent });
 
-    // Track recoverable errors for retry UI
+    // Track recoverable errors (surfaced as integrity warnings)
     const isRecoverable = Boolean(event?.data?.recoverable);
     const existing = recoverableErrors.value.get(agentType);
     recoverableErrors.value.set(agentType, {
@@ -514,59 +586,54 @@ export const useAnalysisStore = defineStore("analysis", () => {
     });
   }
 
-  // ── Retry Action ───────────────────────────────────────────────────
+  // ── Retry Action (M-3: full-pipeline retry, no body, 409-aware) ────
 
   /**
-   * Retry a failed agent by sending a retry request to the backend.
-   * Returns true if the retry was dispatched, false if not retryable.
+   * Re-run a FAILED pipeline via POST /analysis/{job_id}/retry.
+   * The endpoint takes no body and only accepts jobs in status='failed'
+   * (409 otherwise). On success the graph/agent state is reset so the
+   * re-run starts from a clean slate.
    */
-  async function retryAgent(agentType: string): Promise<boolean> {
-    const info = recoverableErrors.value.get(agentType);
-    if (!info || !info.recoverable || info.attempts >= MAX_RETRY_ATTEMPTS) {
-      return false;
-    }
-
+  async function retryPipeline(): Promise<boolean> {
     if (!token.value || !jobId.value) {
       console.warn("[CrimeScope] Cannot retry: missing token or jobId");
       return false;
     }
+    if (status.value !== "failed") {
+      error.value = "Only failed jobs can be retried";
+      return false;
+    }
 
     try {
-      // Reset agent status to running
-      const agent = agents.value.get(agentType);
-      if (agent) {
-        agent.status = "running";
-        agent.error = undefined;
-        agents.value.set(agentType, { ...agent });
+      await api.retryAnalysis(token.value, jobId.value);
+
+      // Reset pipeline + graph state for the re-run (jobId unchanged — the
+      // existing WS connection keeps receiving the new events).
+      status.value = "queued";
+      error.value = "";
+      nodes.value = [];
+      edges.value = [];
+      nodeIdSet.clear();
+      edgeKeySet.clear();
+      deferredEdges.length = 0;
+      lastGraphUpdateTs = 0;
+      recoverableErrors.value.clear();
+      for (const [type, agent] of agents.value.entries()) {
+        agents.value.set(type, { ...agent, status: "idle", error: undefined });
       }
-
-      // Dispatch retry to backend
-      const response = await fetch(`/api/v1/analysis/${jobId.value}/retry`, {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${token.value}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ agent: agentType }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`Retry failed: ${response.status}`);
+      if (pendingGraphFlush) {
+        clearTimeout(pendingGraphFlush);
+        pendingGraphFlush = null;
       }
-
       return true;
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : String(err);
-      console.error(`[CrimeScope] Retry failed for ${agentType}:`, errorMsg);
-
-      // Restore error state
-      const agent = agents.value.get(agentType);
-      if (agent) {
-        agent.status = "error";
-        agent.error = `Retry failed: ${errorMsg}`;
-        agents.value.set(agentType, { ...agent });
+      const axiosLike = err as { response?: { status?: number; data?: { detail?: string } } };
+      if (axiosLike.response?.status === 409) {
+        error.value = "Only failed jobs can be retried (job is not in a failed state)";
+      } else {
+        error.value = err instanceof Error ? err.message : String(err);
       }
-
+      console.error("[CrimeScope] Pipeline retry failed:", err);
       return false;
     }
   }
@@ -574,12 +641,22 @@ export const useAnalysisStore = defineStore("analysis", () => {
   // ── Swarm Actions ──────────────────────────────────────────────────
 
   async function materializePersonas() {
+    // C-1: demo branch — never reassigns the action itself.
+    if (demoController) return demoController.materializePersonas();
     if (!token.value || !jobId.value) return;
     swarmState.value = "materializing";
     try {
-      await api.materializePersonas(token.value, jobId.value);
-      const list = await api.listPersonas(token.value);
-      personas.value = list;
+      // H-3: consume the POST /analysis/{job_id}/personas response — it
+      // carries the real materialized personas. GET /personas is a config
+      // listing (no ids) and must NOT be used for this.
+      const res: PersonaMaterializeResponse = await api.materializePersonas(token.value, jobId.value);
+      personas.value = (res.personas ?? []).map((p) => ({
+        id: p.persona_id,
+        name: p.name,
+        role: p.role,
+        motivation: (p.statements ?? [])[0] ?? "No statement on record.",
+        background: `Grounded on ${p.grounded_nodes} graph node${p.grounded_nodes === 1 ? "" : "s"}.`,
+      }));
     } catch (err) {
       console.error("[CrimeScope] Materialize Personas failed:", err);
     } finally {
@@ -588,24 +665,35 @@ export const useAnalysisStore = defineStore("analysis", () => {
   }
 
   async function sendChat(message: string) {
+    // C-1: demo branch — never reassigns the action itself.
+    if (demoController) return demoController.sendChat(message);
     if (!token.value || !jobId.value) return;
     chatMessages.value.push({ role: "user", content: message });
     swarmState.value = "reporting";
     try {
-      await api.sendChat(token.value, jobId.value, message);
-      // Response comes via WS (REPORT_CHUNK)
+      // H-1: consume the HTTP ChatResponse directly (the backend sends the
+      // full report in one WS event; the WS copy is de-duplicated in the
+      // REPORT_CHUNK handler via _pushAssistantMessageOnce).
+      const res: ChatResponse = await api.sendChat(token.value, jobId.value, message, {
+        conversationId: conversationId.value || undefined,
+      });
+      if (res.conversation_id) conversationId.value = res.conversation_id;
+      if (res.message) _pushAssistantMessageOnce(res.message);
     } catch (err) {
       console.error("[CrimeScope] Send Chat failed:", err);
+    } finally {
       swarmState.value = "idle";
     }
   }
 
   async function injectScenario(hypothesis: string) {
+    // C-1: demo branch — never reassigns the action itself.
+    if (demoController) return demoController.injectScenario(hypothesis);
     if (!token.value || !jobId.value) return;
     swarmState.value = "simulating";
     try {
       await api.injectScenario(token.value, jobId.value, hypothesis);
-      // Response comes via WS (SCENARIO_DIFF)
+      // Response comes via WS (SCENARIO_EVAL + SCENARIO_DIFF)
     } catch (err) {
       console.error("[CrimeScope] Inject Scenario failed:", err);
     } finally {
@@ -696,6 +784,8 @@ export const useAnalysisStore = defineStore("analysis", () => {
     chatMessages.value = [];
     activeReportChunk.value = "";
     scenarios.value = [];
+    scenarioEvals.value = [];
+    conversationId.value = "";
     if (pendingGraphFlush) {
       clearTimeout(pendingGraphFlush);
       pendingGraphFlush = null;
@@ -726,17 +816,20 @@ export const useAnalysisStore = defineStore("analysis", () => {
     chatMessages,
     activeReportChunk,
     scenarios,
+    scenarioEvals,
+    conversationId,
+    isDemo,
     // Computed
     agentList,
     visNodes,
     visEdges,
-    retryableAgents,
     scenarioDiffs,
     // Actions
     setToken,
+    setDemoController,
     startJob,
     handleWSEvent,
-    retryAgent,
+    retryPipeline,
     setError,
     reset,
     materializePersonas,

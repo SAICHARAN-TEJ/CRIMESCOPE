@@ -17,7 +17,12 @@ from app.core.redis_client import get_redis
 from app.engine.agents.base import BaseAgent
 from app.graph.driver import get_neo4j
 from app.schemas.events import (
-    AgentResult, AgentType, EventType, GraphEdgeEvent, GraphNodeEvent, WSEvent,
+    AgentResult,
+    AgentType,
+    EventType,
+    GraphEdgeEvent,
+    GraphNodeEvent,
+    WSEvent,
 )
 
 logger = get_logger("crimescope.agent.graph")

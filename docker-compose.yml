@@ -1,6 +1,7 @@
-# CrimeScope v4.1 — Production Docker Compose
-# 8 services: API, Worker, Beat, Frontend, Neo4j, Qdrant, Redis, MinIO
-# v4.3: + Postgres 16 (structured metadata: jobs, scenarios, conversations)
+# CrimeScope v4.4.0 — Production Docker Compose
+# 8 services: API, Worker, Beat, Frontend, Neo4j, Redis, MinIO, Postgres
+# v4.4: Qdrant removed (unused by code), healthchecks env-driven,
+#       Redis durability (noeviction), MinIO image pinned.
 
 services:
   # ── Backend API ──────────────────────────────────────────────────────
@@ -15,8 +16,6 @@ services:
       redis:
         condition: service_healthy
       neo4j:
-        condition: service_healthy
-      qdrant:
         condition: service_healthy
       minio:
         condition: service_healthy
@@ -53,6 +52,12 @@ services:
         condition: service_healthy
     volumes:
       - ./backend/app:/opt/app/app:ro
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A celery_config inspect ping --destination worker@$$HOSTNAME --timeout 10 >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 15s
+      retries: 3
+      start_period: 120s
     deploy:
       resources:
         limits:
@@ -96,6 +101,8 @@ services:
       - "7687:7687"
     environment:
       NEO4J_AUTH: "${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD:-crimescope}"
+      NEO4J_USER: "${NEO4J_USER:-neo4j}"
+      NEO4J_PASSWORD: "${NEO4J_PASSWORD:-crimescope}"
       NEO4J_PLUGINS: '["apoc"]'
       NEO4J_server_memory_heap_initial__size: "256m"
       NEO4J_server_memory_heap_max__size: "512m"
@@ -103,27 +110,11 @@ services:
       - neo4j_data:/data
       - neo4j_logs:/logs
     healthcheck:
-      test: ["CMD", "cypher-shell", "-u", "neo4j", "-p", "crimescope", "RETURN 1"]
+      test: ["CMD-SHELL", "cypher-shell -u $$NEO4J_USER -p $$NEO4J_PASSWORD 'RETURN 1' >/dev/null 2>&1 || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 30s
-    restart: unless-stopped
-
-  # ── Qdrant Vector Store ──────────────────────────────────────────────
-  qdrant:
-    image: qdrant/qdrant:v1.12.6
-    ports:
-      - "6333:6333"
-      - "6334:6334"
-    volumes:
-      - qdrant_data:/qdrant/storage
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:6333/healthz"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 10s
     restart: unless-stopped
 
   # ── Redis Cache, Pub/Sub & Streams ───────────────────────────────────
@@ -133,8 +124,8 @@ services:
       - "6379:6379"
     command: >
       redis-server
-      --maxmemory 256mb
-      --maxmemory-policy allkeys-lru
+      --maxmemory 512mb
+      --maxmemory-policy noeviction
       --appendonly yes
     volumes:
       - redis_data:/data
@@ -145,9 +136,9 @@ services:
       retries: 3
     restart: unless-stopped
 
-  # ── MinIO Object Storage ─────────────────────────────────────────────
+  # ── MinIO Object Storage (pinned release) ────────────────────────────
   minio:
-    image: minio/minio:latest
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z-cpuv1
     ports:
       - "9000:9000"
       - "9001:9001"
@@ -177,7 +168,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-crimescope} -d ${POSTGRES_DB:-crimescope}"]
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -187,7 +178,6 @@ services:
 volumes:
   neo4j_data:
   neo4j_logs:
-  qdrant_data:
   redis_data:
   minio_data:
   postgres_data:

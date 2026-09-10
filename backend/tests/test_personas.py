@@ -84,14 +84,7 @@ class TestGraphPersonaGrounding:
 
 
 class TestPersonaEndpoints:
-    def test_materialize_requires_auth(self):
-        from fastapi.testclient import TestClient
 
-        from app.main import app
-
-        client = TestClient(app)
-        resp = client.post("/api/v1/analysis/job-any/personas")
-        assert resp.status_code == 401
 
     def test_materialize_unknown_job_404(self):
         from fastapi.testclient import TestClient

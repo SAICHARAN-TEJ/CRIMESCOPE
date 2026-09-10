@@ -27,7 +27,7 @@ from app.core.logger import get_logger
 from app.core.redis_client import get_redis
 from app.core.security import sanitize_input
 from app.engine.agents.base import BaseAgent
-from app.engine.agents.persona import PersonaAgent, get_default_personas
+from app.engine.agents.persona import get_default_personas
 from app.schemas.events import (
     AgentResult,
     AgentType,
@@ -246,11 +246,13 @@ class ScenarioAgent(BaseAgent):
             agent=self.agent_type,
             success=True,
             facts=[
-                f"Scenario '{hypothesis[:60]}...' evaluated by {len(valid_evals)} personas: "
-                f"consensus={consensus_verdict} "
-                f"(supports={verdict_counts.get('supports', 0)}, "
-                f"contradicts={verdict_counts.get('contradicts', 0)}, "
-                f"neutral={verdict_counts.get('neutral', 0)})"
+                (
+                    f"Scenario '{hypothesis[:60]}...' evaluated by {len(valid_evals)} personas: "
+                    f"consensus={consensus_verdict} "
+                    f"(supports={verdict_counts.get('supports', 0)}, "
+                    f"contradicts={verdict_counts.get('contradicts', 0)}, "
+                    f"neutral={verdict_counts.get('neutral', 0)})"
+                )
             ],
             entities=[scenario_result.model_dump()],
         )

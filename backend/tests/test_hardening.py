@@ -11,9 +11,7 @@ Tests:
 
 from __future__ import annotations
 
-import asyncio
 import pytest
-
 
 # ── Guardian Pattern: Input Validation ────────────────────────────────────
 
@@ -22,24 +20,24 @@ class TestGuardianInput:
     """Test that agents reject invalid inputs."""
 
     def test_video_rejects_empty_job_id(self):
-        from app.engine.agents.video import VideoAgent
         from app.engine.agents.base import DataIntegrityError
+        from app.engine.agents.video import VideoAgent
 
         agent = VideoAgent()
         with pytest.raises(DataIntegrityError, match="job_id"):
             agent.validate_input("", {"files": []})
 
     def test_video_rejects_non_dict_payload(self):
-        from app.engine.agents.video import VideoAgent
         from app.engine.agents.base import DataIntegrityError
+        from app.engine.agents.video import VideoAgent
 
         agent = VideoAgent()
         with pytest.raises(DataIntegrityError, match="payload must be a dict"):
             agent.validate_input("job-1", "not a dict")
 
     def test_video_rejects_non_list_files(self):
-        from app.engine.agents.video import VideoAgent
         from app.engine.agents.base import DataIntegrityError
+        from app.engine.agents.video import VideoAgent
 
         agent = VideoAgent()
         with pytest.raises(DataIntegrityError, match="files must be a list"):
@@ -53,16 +51,16 @@ class TestGuardianInput:
         agent.validate_input("job-1", {"files": [{"object_key": "a", "filename": "v.mp4"}]})
 
     def test_document_rejects_empty_job_id(self):
-        from app.engine.agents.document import DocumentAgent
         from app.engine.agents.base import DataIntegrityError
+        from app.engine.agents.document import DocumentAgent
 
         agent = DocumentAgent()
         with pytest.raises(DataIntegrityError, match="job_id"):
             agent.validate_input("", {"files": []})
 
     def test_document_rejects_non_list_files(self):
-        from app.engine.agents.document import DocumentAgent
         from app.engine.agents.base import DataIntegrityError
+        from app.engine.agents.document import DocumentAgent
 
         agent = DocumentAgent()
         with pytest.raises(DataIntegrityError, match="files must be a list"):
@@ -76,8 +74,8 @@ class TestGuardianOutput:
     """Test that agents reject invalid outputs."""
 
     def test_video_rejects_success_with_no_facts(self):
-        from app.engine.agents.video import VideoAgent
         from app.engine.agents.base import DataIntegrityError
+        from app.engine.agents.video import VideoAgent
         from app.schemas.events import AgentResult, AgentType
 
         agent = VideoAgent()
@@ -96,8 +94,8 @@ class TestGuardianOutput:
         agent.validate_output(good_result)  # Should not raise
 
     def test_document_rejects_success_with_no_facts(self):
-        from app.engine.agents.document import DocumentAgent
         from app.engine.agents.base import DataIntegrityError
+        from app.engine.agents.document import DocumentAgent
         from app.schemas.events import AgentResult, AgentType
 
         agent = DocumentAgent()
@@ -106,8 +104,8 @@ class TestGuardianOutput:
             agent.validate_output(bad_result)
 
     def test_base_rejects_non_agent_result(self):
-        from app.engine.agents.video import VideoAgent
         from app.engine.agents.base import DataIntegrityError
+        from app.engine.agents.video import VideoAgent
 
         agent = VideoAgent()
         with pytest.raises(DataIntegrityError, match="Expected AgentResult"):

@@ -6,8 +6,6 @@ Validates all event models, API request/response models, and enum values.
 
 from __future__ import annotations
 
-import pytest
-
 
 class TestEnums:
     def test_event_types(self):
@@ -15,7 +13,15 @@ class TestEnums:
 
         assert EventType.JOB_STARTED == "JOB_STARTED"
         assert EventType.PIPELINE_COMPLETE == "PIPELINE_COMPLETE"
-        assert len(EventType) == 14
+        assert len(EventType) == 16
+
+    def test_event_type_additions_v4_4(self):
+        """§14: CONNECTED, BATCH_UPDATE, HEARTBEAT are first-class events."""
+        from app.schemas.events import EventType
+
+        assert EventType.CONNECTED == "CONNECTED"
+        assert EventType.BATCH_UPDATE == "BATCH_UPDATE"
+        assert EventType.HEARTBEAT == "HEARTBEAT"
 
     def test_job_status(self):
         from app.schemas.events import JobStatus
@@ -32,7 +38,7 @@ class TestEnums:
 
 class TestWSEvent:
     def test_ws_event_creation(self):
-        from app.schemas.events import WSEvent, EventType
+        from app.schemas.events import EventType, WSEvent
 
         event = WSEvent(
             event=EventType.AGENT_START,
@@ -44,7 +50,7 @@ class TestWSEvent:
         assert event.timestamp is not None
 
     def test_ws_event_serialization(self):
-        from app.schemas.events import WSEvent, EventType, AgentType
+        from app.schemas.events import AgentType, EventType, WSEvent
 
         event = WSEvent(
             event=EventType.AGENT_COMPLETE,
@@ -104,7 +110,7 @@ class TestAPIModels:
         assert req.job_id  # auto-generated
 
     def test_pipeline_result(self):
-        from app.schemas.events import PipelineResult, JobStatus, AgentResult, AgentType
+        from app.schemas.events import AgentResult, AgentType, JobStatus, PipelineResult
 
         result = PipelineResult(
             job_id="test",

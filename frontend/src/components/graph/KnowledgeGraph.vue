@@ -1,15 +1,18 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
-import { Network } from 'vis-network'
-import { DataSet } from 'vis-data'
 import { useAnalysisStore } from '@/stores/analysisStore'
 
 const store = useAnalysisStore()
 const containerRef = ref<HTMLDivElement | null>(null)
-let network: Network | null = null
+const visReady = ref(false)
 
-const nodes = new DataSet<any>([])
-const edges = new DataSet<any>([])
+// vis-network + vis-data (~430 KB) load ON DEMAND via dynamic import so
+// they never land in the entry chunk (bundle-split plan §28). Instances
+// are per-component (H-5): DataSets are created in init() and cleared on
+// unmount, so stale nodes can never leak across jobs or routes.
+let network: any = null
+let nodes: any = null
+let edges: any = null
 
 const typeColors: Record<string, string> = {
   person: 'oklch(0.60 0.20 20)',
@@ -36,10 +39,19 @@ function getColor(type: string): string {
   return typeColors.default
 }
 
-function init() {
+async function init() {
+  if (!containerRef.value) return
+  const [{ Network }, { DataSet }] = await Promise.all([
+    import('vis-network'),
+    import('vis-data'),
+  ])
+  // Component may have unmounted while the chunk was loading.
   if (!containerRef.value) return
 
-  const data = { nodes, edges }
+  // Per-instance DataSets (H-5) — never module singletons.
+  nodes = new DataSet<any>([])
+  edges = new DataSet<any>([])
+
   const options = {
     nodes: {
       shape: 'dot',
@@ -74,10 +86,14 @@ function init() {
     }
   }
 
-  network = new Network(containerRef.value, data, options)
+  network = new Network(containerRef.value, { nodes, edges }, options)
+  visReady.value = true
+  syncGraph()
 }
 
 function syncGraph() {
+  if (!visReady.value || !nodes || !edges) return
+
   const currentVisNodes = store.visNodes.map(n => ({
     ...n,
     color: {
@@ -85,7 +101,7 @@ function syncGraph() {
       border: 'oklch(0.95 0 0)'
     }
   }))
-  
+
   nodes.update(currentVisNodes)
   edges.update(store.visEdges)
 }
@@ -96,15 +112,16 @@ watch(
   { deep: false }
 )
 
-onMounted(() => {
-  init()
-  syncGraph()
-})
+onMounted(init)
 
 onUnmounted(() => {
   if (network) {
     network.destroy()
+    network = null
   }
+  if (nodes) { nodes.clear(); nodes = null }
+  if (edges) { edges.clear(); edges = null }
+  visReady.value = false
 })
 </script>
 
@@ -122,10 +139,11 @@ onUnmounted(() => {
         <span class="kg-legend-item"><span class="dot" style="background: oklch(0.65 0.15 150)"></span> Org</span>
       </div>
     </div>
-    
+
     <div class="kg-body">
       <div ref="containerRef" class="kg-canvas"></div>
-      <div v-if="store.nodes.length === 0" class="kg-empty">
+      <div v-if="!visReady" class="kg-skeleton mono">INITIALIZING GRAPH ENGINE…</div>
+      <div v-else-if="store.nodes.length === 0" class="kg-empty">
         <p class="mono">AWAITING EVIDENCE DATA...</p>
       </div>
     </div>
@@ -191,6 +209,7 @@ onUnmounted(() => {
   height: 100%;
 }
 
+.kg-skeleton,
 .kg-empty {
   position: absolute;
   inset: 0;

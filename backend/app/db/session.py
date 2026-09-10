@@ -27,9 +27,6 @@ SessionLocal = async_sessionmaker(
     expire_on_commit=False,
 )
 
-# Re-export for the health check: engine's connection is the probe.
-from sqlalchemy import text  # noqa: E402
-
 
 class Base(DeclarativeBase):
     """Declarative base for all ORM models."""

@@ -18,7 +18,6 @@ import tempfile
 import time
 from pathlib import Path
 from typing import Any
-from uuid import uuid4
 
 import redis
 
@@ -59,6 +58,18 @@ def _push_to_graph_stream(items: list[dict[str, Any]]) -> None:
         pass
 
 
+def _with_job_attempt(data: dict[str, Any], attempt: int | None) -> dict[str, Any]:
+    """Attach the §11 job attempt to event metadata when present (L5a).
+
+    Mirrors Supervisor._with_job_attempt — agent events already use
+    "attempt" for the agent-internal retry count, so the job-level fence
+    is published under "job_attempt".
+    """
+    if attempt is not None:
+        return {**data, "job_attempt": attempt}
+    return data
+
+
 # ── Video Processing Task ─────────────────────────────────────────────────
 
 
@@ -72,13 +83,14 @@ def _push_to_graph_stream(items: list[dict[str, Any]]) -> None:
     time_limit=300,        # Hard kill after 5 min
     soft_time_limit=240,   # Graceful timeout at 4 min
 )
-def process_video(self, job_id: str, file_meta: dict[str, Any]) -> dict[str, Any]:
+def process_video(self, job_id: str, file_meta: dict[str, Any], attempt: int | None = None) -> dict[str, Any]:
     """
     Process a video file: extract keyframes + transcribe audio.
 
     Args:
         job_id: Pipeline job ID for event correlation.
         file_meta: {object_key, filename, content_type}
+        attempt: Optional §11 job attempt (L5a) — published in event metadata.
 
     Returns:
         {text_chunks: [...], keyframes: [...], processing_time_ms: float}
@@ -91,7 +103,7 @@ def process_video(self, job_id: str, file_meta: dict[str, Any]) -> dict[str, Any
         "event": "AGENT_START",
         "job_id": job_id,
         "agent": "video",
-        "data": {"filename": filename},
+        "data": _with_job_attempt({"filename": filename}, attempt),
     })
 
     text_chunks: list[str] = []
@@ -162,11 +174,11 @@ def process_video(self, job_id: str, file_meta: dict[str, Any]) -> dict[str, Any
             "event": "AGENT_COMPLETE",
             "job_id": job_id,
             "agent": "video",
-            "data": {
+            "data": _with_job_attempt({
                 "processing_time_ms": elapsed,
                 "keyframes": len(keyframes),
                 "chunks": len(text_chunks),
-            },
+            }, attempt),
         })
 
         return {
@@ -181,7 +193,9 @@ def process_video(self, job_id: str, file_meta: dict[str, Any]) -> dict[str, Any
             "event": "AGENT_ERROR",
             "job_id": job_id,
             "agent": "video",
-            "data": {"error": str(exc), "processing_time_ms": elapsed},
+            "data": _with_job_attempt(
+                {"error": str(exc), "processing_time_ms": elapsed}, attempt
+            ),
         })
         raise self.retry(exc=exc)
 
@@ -199,7 +213,7 @@ def process_video(self, job_id: str, file_meta: dict[str, Any]) -> dict[str, Any
     time_limit=120,
     soft_time_limit=100,
 )
-def process_document(self, job_id: str, file_meta: dict[str, Any]) -> dict[str, Any]:
+def process_document(self, job_id: str, file_meta: dict[str, Any], attempt: int | None = None) -> dict[str, Any]:
     """
     Process a document: extract text and chunk it.
 
@@ -208,6 +222,7 @@ def process_document(self, job_id: str, file_meta: dict[str, Any]) -> dict[str, 
     Args:
         job_id: Pipeline job ID.
         file_meta: {object_key, filename, content_type}
+        attempt: Optional §11 job attempt (L5a) — published in event metadata.
 
     Returns:
         {text_chunks: [...], processing_time_ms: float}
@@ -221,7 +236,7 @@ def process_document(self, job_id: str, file_meta: dict[str, Any]) -> dict[str, 
         "event": "AGENT_START",
         "job_id": job_id,
         "agent": "document",
-        "data": {"filename": filename},
+        "data": _with_job_attempt({"filename": filename}, attempt),
     })
 
     text_chunks: list[str] = []
@@ -285,10 +300,10 @@ def process_document(self, job_id: str, file_meta: dict[str, Any]) -> dict[str, 
             "event": "AGENT_COMPLETE",
             "job_id": job_id,
             "agent": "document",
-            "data": {
+            "data": _with_job_attempt({
                 "processing_time_ms": elapsed,
                 "chunks": len(text_chunks),
-            },
+            }, attempt),
         })
 
         return {
@@ -302,6 +317,8 @@ def process_document(self, job_id: str, file_meta: dict[str, Any]) -> dict[str, 
             "event": "AGENT_ERROR",
             "job_id": job_id,
             "agent": "document",
-            "data": {"error": str(exc), "processing_time_ms": elapsed},
+            "data": _with_job_attempt(
+                {"error": str(exc), "processing_time_ms": elapsed}, attempt
+            ),
         })
         raise self.retry(exc=exc)

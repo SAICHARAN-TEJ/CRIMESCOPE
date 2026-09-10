@@ -10,15 +10,15 @@ import { DemoController } from './controller'
 const store = useAnalysisStore()
 const controller = new DemoController()
 
-// Override store methods for demo
+// C-1: register the demo controller — store actions branch on it internally
+// and are NEVER reassigned, so exiting /demo restores real backend flows.
 onMounted(() => {
-  store.sendChat = controller.sendChat.bind(controller)
-  store.injectScenario = controller.injectScenario.bind(controller)
-  store.materializePersonas = controller.materializePersonas.bind(controller)
+  store.setDemoController(controller)
 })
 
 onUnmounted(() => {
   controller.stop()
+  store.setDemoController(null)
   store.reset()
 })
 
@@ -30,11 +30,16 @@ function submitJob() {
 }
 
 // ── Agent ─────────────────────────────────────────────────────────────────
+// Full 8-agent vocabulary (demo startSequence fires them all).
 const AGENT_META: Record<string, { icon: string; label: string }> = {
   video:    { icon: '🎬', label: 'Video Transcription' },
   document: { icon: '📄', label: 'Document Analysis' },
   entity:   { icon: '🔍', label: 'Entity Extraction' },
   graph:    { icon: '🕸', label: 'Knowledge Graph' },
+  persona:  { icon: '🎭', label: 'Persona Swarm' },
+  report:   { icon: '📝', label: 'Report Agent' },
+  consensus:{ icon: '⚖️', label: 'Consensus Voting' },
+  scenario: { icon: '🧪', label: 'Scenario Simulation' },
 }
 
 function agentDotClass(status: string) {
@@ -157,7 +162,7 @@ const pipelineSummary = computed(() => {
           <div v-for="(ev, i) in recentLog" :key="i" class="log__row">
             <code class="log__tag">{{ ev.event }}</code>
             <span v-if="ev.agent" class="log__agent eyebrow">{{ ev.agent }}</span>
-            <span class="log__msg">{{ ev.data?.status || ev.data?.message || JSON.stringify(ev.data) }}</span>
+            <span class="log__msg">{{ ev.data?.status || ev.data?.message || (ev.data && Object.keys(ev.data).length ? JSON.stringify(ev.data) : '—') }}</span>
           </div>
         </template>
         <p v-else class="log__empty eyebrow">Awaiting events…</p>

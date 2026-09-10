@@ -18,19 +18,19 @@ Start: uvicorn app.main:app --host 0.0.0.0 --port 8000
 from __future__ import annotations
 
 import asyncio
-import random
 import time
 from contextlib import asynccontextmanager
 from typing import Any
 from uuid import uuid4
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
 from app.core.config import get_settings
 from app.core.logger import get_logger, setup_logging
 from app.core.redis_client import get_redis
+from app.core.security import get_admin_user
 from app.graph.driver import get_neo4j
 from app.storage.minio_client import get_minio
 
@@ -80,7 +80,7 @@ async def lifespan(application: FastAPI):
     except Exception as e:
         logger.warning(f"Postgres unavailable at startup (will retry via DLQ): {e}")
 
-    db_dlq.dlq_worker_task()
+    application.state.dlq_worker_task = db_dlq.dlq_worker_task()
 
     logger.info(
         f"Services: Redis={'✓' if redis.connected else '✗'} "
@@ -94,6 +94,7 @@ async def lifespan(application: FastAPI):
 
     # ── Shutdown: disconnect services ────────────────────────────────
     logger.info("Shutting down...")
+    await db_dlq.stop_dlq_worker()
     await redis.disconnect()
     await neo4j.disconnect()
     await db_engine.dispose()
@@ -104,7 +105,7 @@ async def lifespan(application: FastAPI):
 
 app = FastAPI(
     title="CrimeScope API",
-    version="4.2.0",
+    version="4.4.0",
     description=(
         "Self-validating, self-healing criminal reconstruction engine. "
         "JWT auth, parallel AI agents, Neo4j knowledge graph, "
@@ -161,7 +162,7 @@ app.include_router(ws_router)
 
 
 @app.get("/debug/chaos-status", include_in_schema=False)
-async def chaos_status():
+async def chaos_status(_: dict[str, Any] = Depends(get_admin_user)):
     """Show current chaos engineering configuration."""
     settings = get_settings()
     redis = get_redis()
@@ -183,7 +184,7 @@ async def chaos_status():
 
 
 @app.get("/debug/dead-letter-queue", include_in_schema=False)
-async def get_dead_letter_queue(limit: int = 50):
+async def get_dead_letter_queue(limit: int = 50, _: dict[str, Any] = Depends(get_admin_user)):
     """Retrieve items from the dead letter queue for manual recovery."""
     import json as _json
     redis = get_redis()
@@ -193,16 +194,21 @@ async def get_dead_letter_queue(limit: int = 50):
         items = []
         for raw in raw_items:
             try:
-                items.append(_json.loads(raw))
+                item = _json.loads(raw)
+                items.append({
+                    "kind": item.get("kind", "unknown"),
+                    "queued_at": item.get("queued_at"),
+                    "attempts": item.get("attempts", 0),
+                })
             except Exception:
-                items.append({"raw": str(raw)})
+                items.append({"kind": "unknown"})
         return {"count": len(items), "items": items}
     except Exception as e:
         raise HTTPException(status_code=503, detail=f"Redis unavailable: {e}")
 
 
 @app.post("/debug/forensic-stress-test")
-async def forensic_stress_test():
+async def forensic_stress_test(_: dict[str, Any] = Depends(get_admin_user)):
     """
     🔬 Forensic Stress-Test Endpoint
 
@@ -374,7 +380,7 @@ async def forensic_stress_test():
     # ──────────────────────────────────────────────────────────────────
     t4 = time.time()
     try:
-        from app.engine.agents.base import ChaosError, chaos_injector
+        from app.engine.agents.base import chaos_injector
 
         call_count = 0
 

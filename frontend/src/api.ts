@@ -3,7 +3,14 @@
  * Thin wrappers over the REST endpoints with typed returns.
  */
 import axios from 'axios'
-import type { TokenResponse, PresignedURLResponse, JobResponse, UploadFile } from '@/types'
+import type {
+  TokenResponse,
+  PresignedURLResponse,
+  JobResponse,
+  UploadFile,
+  ChatResponse,
+  PersonaMaterializeResponse,
+} from '@/types'
 
 const http = axios.create({ baseURL: '/api/v1' })
 
@@ -58,53 +65,59 @@ export async function startAnalysis(
   return data
 }
 
-export async function getJobStatus(token: string, jobId: string) {
-  const { data } = await http.get(`/analysis/${jobId}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  })
-  return data
-}
-
-export async function healthCheck() {
-  const { data } = await http.get('/healthz')
+/**
+ * Re-run a failed pipeline. POST /analysis/{job_id}/retry takes NO body;
+ * valid only when the job status is 'failed' (backend replies 409 otherwise).
+ */
+export async function retryAnalysis(token: string, jobId: string): Promise<JobResponse> {
+  const { data } = await http.post<JobResponse>(
+    `/analysis/${jobId}/retry`,
+    undefined,
+    { headers: { Authorization: `Bearer ${token}` } }
+  )
   return data
 }
 
 // ── Swarm Intelligence ───────────────────────────────────────────────────
 
-export async function listPersonas(token: string) {
-  const { data } = await http.get('/personas', {
-    headers: { Authorization: `Bearer ${token}` },
-  })
-  return data
-}
-
-export async function materializePersonas(token: string, jobId: string) {
-  const { data } = await http.post(`/analysis/${jobId}/personas`, {}, {
-    headers: { Authorization: `Bearer ${token}` },
-  })
-  return data
-}
-
-export async function sendChat(token: string, jobId: string, message: string, personaId?: string) {
-  const { data } = await http.post('/chat', 
-    { job_id: jobId, message, persona_id: personaId }, 
+/** POST /analysis/{job_id}/personas — materialize graph-entity personas. */
+export async function materializePersonas(
+  token: string,
+  jobId: string
+): Promise<PersonaMaterializeResponse> {
+  const { data } = await http.post<PersonaMaterializeResponse>(
+    `/analysis/${jobId}/personas`,
+    {},
     { headers: { Authorization: `Bearer ${token}` } }
   )
   return data
 }
 
+/** POST /chat — ask the ReportAgent (or a persona) a question. */
+export async function sendChat(
+  token: string,
+  jobId: string,
+  message: string,
+  opts?: { conversationId?: string; personaId?: string }
+): Promise<ChatResponse> {
+  const { data } = await http.post<ChatResponse>(
+    '/chat',
+    {
+      job_id: jobId,
+      message,
+      conversation_id: opts?.conversationId ?? undefined,
+      persona_id: opts?.personaId ?? undefined,
+    },
+    { headers: { Authorization: `Bearer ${token}` } }
+  )
+  return data
+}
+
+/** POST /scenario — inject a "what if" hypothesis for evaluation. */
 export async function injectScenario(token: string, jobId: string, hypothesis: string) {
   const { data } = await http.post('/scenario',
     { job_id: jobId, hypothesis },
     { headers: { Authorization: `Bearer ${token}` } }
   )
-  return data
-}
-
-export async function getScenarioResult(token: string, scenarioId: string) {
-  const { data } = await http.get(`/scenario/${scenarioId}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  })
   return data
 }

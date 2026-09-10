@@ -1,0 +1,6 @@
+# Normalize line endings across platforms.
+# Container-entrypoint scripts must stay LF; Windows scripts stay CRLF.
+* text=auto
+*.sh text eol=lf
+*.py text eol=lf
+*.ps1 text eol=crlf
