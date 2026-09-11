@@ -7,15 +7,18 @@ test.describe('Homepage', () => {
     // Check title/headline
     await expect(page.locator('h1')).toContainText('Reconstruct the truth.');
 
-    // Check primary CTA links to demo
-    const tryDemoBtn = page.locator('a.home-btn--primary', { hasText: 'Try the Demo' }).first();
+    // Check primary CTA links to demo ("Run the live demo")
+    const tryDemoBtn = page.locator('a.home-btn--primary', { hasText: 'Run the live demo' }).first();
     await expect(tryDemoBtn).toBeVisible();
     await expect(tryDemoBtn).toHaveAttribute('href', '/demo');
 
-    // Check secondary CTA links to app
-    const openAppBtn = page.locator('a.home-btn--secondary', { hasText: 'Open CrimeScope' }).first();
+    // Check secondary CTA links to app ("Open the app")
+    const openAppBtn = page.locator('a', { hasText: 'Open the app' }).first();
     await expect(openAppBtn).toBeVisible();
     await expect(openAppBtn).toHaveAttribute('href', '/app');
+
+    // Check verify stage is marked SKIPPED - NOT IMPLEMENTED
+    await expect(page.locator('.verify-badge')).toContainText('SKIPPED — NOT IMPLEMENTED');
   });
 
   test('respects prefers-reduced-motion', async ({ page }) => {
@@ -23,8 +26,8 @@ test.describe('Homepage', () => {
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.goto('/');
 
-    // Ensure the ambient background is hidden or has no animation
-    const ambientBg = page.locator('.hero-ambient-bg');
-    await expect(ambientBg).toHaveCSS('display', 'none');
+    // Ensure the paper grain overlay is hidden
+    const grainOverlay = page.locator('.case-grain-overlay');
+    await expect(grainOverlay).toHaveCSS('display', 'none');
   });
 });

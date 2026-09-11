@@ -37,8 +37,8 @@ Desktop.ini
 
 # ── Logs & Data ───────────────────────────────────────────────────────
 logs/
-*.log
-data/
+/data/
+!frontend/src/home/data/
 
 # ── MinIO / Object Storage ───────────────────────────────────────────
 minio-data/
