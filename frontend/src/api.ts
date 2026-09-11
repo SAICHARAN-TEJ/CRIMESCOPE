@@ -3,6 +3,7 @@
  * Thin wrappers over the REST endpoints with typed returns.
  */
 import axios from 'axios'
+import { API_BASE_URL } from '@/config'
 import type {
   TokenResponse,
   PresignedURLResponse,
@@ -12,7 +13,7 @@ import type {
   PersonaMaterializeResponse,
 } from '@/types'
 
-const http = axios.create({ baseURL: '/api/v1' })
+const http = axios.create({ baseURL: API_BASE_URL })
 
 // ── Auth ──────────────────────────────────────────────────────────────────
 

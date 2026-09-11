@@ -11,7 +11,7 @@ Canonical env var list (must stay field-for-field in sync with the root
   POSTGRES_PASSWORD, POSTGRES_PORT, REDIS_URL, NEO4J_URI, NEO4J_USER,
   NEO4J_PASSWORD, MINIO_ENDPOINT, MINIO_ENDPOINT_PUBLIC, MINIO_BUCKET,
   MINIO_ACCESS_KEY, MINIO_SECRET_KEY, MINIO_SECURE, MAX_DOWNLOAD_MB,
-  RATE_LIMIT_PER_MINUTE.
+  RATE_LIMIT_PER_MINUTE, CORS_ORIGINS.
 
 v4.4: canonical env alignment, AUTH_ENABLED flag, admin bootstrap vars,
 dual MinIO endpoints (internal ops + public presign), download cap,
@@ -36,6 +36,11 @@ class Settings(BaseSettings):
     frontend_port: int = 3000
     environment: str = "development"  # development | production
     auth_enabled: bool = True
+
+    # ── CORS ───────────────────────────────────────────────────────────
+    # Comma-separated allowed browser origins. Add the frontend's public
+    # URL when hosting the frontend elsewhere (e.g. Vercel).
+    cors_origins: str = "http://localhost:3000,http://localhost:5173"
 
     # ── Admin bootstrap (seeded by app.db.init_db) ─────────────────────
     admin_username: str = "admin"

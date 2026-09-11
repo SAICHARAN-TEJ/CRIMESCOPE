@@ -19,6 +19,7 @@
  *   - 4003        — fatal (bad job_id)    → do NOT reconnect
  *   - 4029        — connection limit hit → do NOT reconnect
  */
+import { wsOrigin } from '@/config'
 import { useAnalysisStore } from '@/stores/analysisStore'
 import type { WSEvent } from '@/types'
 
@@ -64,9 +65,8 @@ export function disconnectWS(): void {
 function _open(): void {
   const store = useAnalysisStore()
   const gen = ++_gen // capture generation for this socket's closures
-  const protocol = location.protocol === 'https:' ? 'wss' : 'ws'
   // ⚠ Token is appended as query param — backend requires it for JWT auth
-  const url = `${protocol}://${location.host}/ws/analysis/${encodeURIComponent(_jobId)}?token=${encodeURIComponent(_token)}`
+  const url = `${wsOrigin()}/ws/analysis/${encodeURIComponent(_jobId)}?token=${encodeURIComponent(_token)}`
 
   const sock = new WebSocket(url)
   ws = sock
