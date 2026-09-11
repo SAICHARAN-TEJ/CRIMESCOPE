@@ -38,7 +38,11 @@ function glyph(state: StageState): string {
       >
         <div class="stage-topline">
           <span class="stage-index">0{{ index + 1 }}</span>
-          <span class="stage-state" :title="stage.detail">{{ glyph(stage.state) }} {{ stage.state }}</span>
+          <span
+            class="stage-state"
+            :class="['stage-state-chip', `stage-state-chip--${stage.state.toLowerCase()}`]"
+            :title="stage.detail"
+          >{{ glyph(stage.state) }} {{ stage.state }}</span>
         </div>
         <strong>{{ stage.label }}</strong>
         <span v-if="stage.itemCount !== null" class="stage-count mono">{{ stage.itemCount }} items</span>
@@ -68,21 +72,20 @@ function glyph(state: StageState): string {
 .pipeline-stage { min-width: 112px; flex: 1; position: relative; padding: 8px 10px 6px; border-top: 2px solid var(--border); color: var(--text-muted); transition: border-color var(--dur-fast), color var(--dur-fast), background var(--dur-fast); }
 .pipeline-stage strong { display: block; font-size: 12px; color: var(--text-primary); margin: 5px 0 2px; font-weight: 500; }
 .stage-topline { display: flex; justify-content: space-between; align-items: center; gap: 4px; }
-.stage-index, .stage-time, .stage-count { font: 9px var(--font-mono); color: var(--text-muted); }
-.stage-state { font: 9px var(--font-mono); letter-spacing: .03em; white-space: nowrap; }
+.stage-index, .stage-time, .stage-count { font: 9px var(--font-mono); color: var(--text-muted); font-variant-numeric: tabular-nums; }
+/* Chip visuals are owned by .stage-state-chip tokens in design-system.css. */
 .stage-detail { display: block; font-size: 10px; line-height: 1.3; color: var(--amber); margin-top: 4px; max-width: 150px; }
 .stage-connector { position: absolute; top: 17px; right: -5px; width: 10px; height: 1px; background: var(--border-strong); z-index: 1; }
-.pipeline-stage--active { border-color: var(--accent); color: var(--accent); background: var(--accent-muted); }
-.pipeline-stage--active .stage-state { color: var(--accent); }
-.pipeline-stage--active .stage-state { animation: stage-pulse 1.8s ease-in-out infinite; }
-.pipeline-stage--waiting { border-color: var(--amber); background: var(--amber-muted); }
-.pipeline-stage--waiting .stage-state { color: var(--amber); }
-.pipeline-stage--completed { border-color: var(--forest); }
-.pipeline-stage--completed .stage-state { color: var(--forest); }
-.pipeline-stage--failed { border-color: var(--crimson); background: var(--crimson-muted); }
-.pipeline-stage--failed .stage-state { color: var(--crimson); }
-.pipeline-stage--skipped { border-color: var(--border); opacity: .72; }
-@keyframes stage-pulse { 0%, 100% { opacity: .72; } 50% { opacity: 1; } }
-@media (prefers-reduced-motion: reduce) { .pipeline-stage--active .stage-state { animation: none; } }
+/* Stage card accent edge per state — consumes design-system stage tokens. */
+.pipeline-stage--queued    { border-color: var(--stage-queued-border); }
+.pipeline-stage--active     { border-color: var(--stage-active-border); background: var(--stage-active-bg); }
+.pipeline-stage--waiting    { border-color: var(--stage-waiting-border); background: var(--stage-waiting-bg); }
+.pipeline-stage--blocked    { border-color: var(--stage-blocked-border); }
+.pipeline-stage--completed  { border-color: var(--stage-completed-border); }
+.pipeline-stage--failed     { border-color: var(--stage-failed-border); background: var(--stage-failed-bg); }
+.pipeline-stage--failed .stage-detail { color: var(--stage-failed-fg); }
+.pipeline-stage--blocked .stage-detail { color: var(--stage-blocked-fg); }
+.pipeline-stage--cancelled  { border-color: var(--stage-cancelled-border); }
+.pipeline-stage--skipped    { border-color: var(--stage-skipped-border); border-top-style: dashed; opacity: .72; }
 @media (max-width: 900px) { .pipeline-stage { min-width: 105px; } }
 </style>

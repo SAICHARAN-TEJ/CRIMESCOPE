@@ -516,3 +516,99 @@ p { color: var(--text-secondary); max-width: 65ch; }
   .console__surface { min-height: 480px; }
   .log { height: 110px; }
 }
+
+/* ════════════════════════════════════════════════════════════════════════
+   v6.2 — Stage-state treatments (pipeline rail)
+
+   Appended rules only. One bg/border/fg token triple per pipeline
+   stage state so each chip reads distinctly: ACTIVE pulses (subtle
+   ring), FAILED is an urgent warm red, SKIPPED is muted + dashed,
+   COMPLETED is settled. The pulse is disabled under
+   prefers-reduced-motion.
+   ════════════════════════════════════════════════════════════════════════ */
+
+/* ── Stage-state color tokens ────────────────────────────────────────── */
+:root {
+  /* QUEUED — parked, lowest emphasis */
+  --stage-queued-bg:      var(--surface-2);
+  --stage-queued-border: var(--border);
+  --stage-queued-fg:     var(--text-secondary);
+
+  /* ACTIVE — in flight right now (pulses) */
+  --stage-active-bg:      var(--accent-muted);
+  --stage-active-border: var(--accent);
+  --stage-active-fg:     var(--accent);
+
+  /* WAITING — paused on external input */
+  --stage-waiting-bg:      var(--amber-muted);
+  --stage-waiting-border: var(--amber);
+  --stage-waiting-fg:     var(--amber);
+
+  /* BLOCKED — obstructed, hot orange (distinct from FAILED) */
+  --stage-blocked-bg:      oklch(0.30 0.06 45);
+  --stage-blocked-border: oklch(0.72 0.13 45);
+  --stage-blocked-fg:     oklch(0.74 0.13 45);
+
+  /* COMPLETED — settled, needs no further attention */
+  --stage-completed-bg:      var(--forest-muted);
+  --stage-completed-border: var(--forest);
+  --stage-completed-fg:     var(--forest);
+
+  /* FAILED — urgent warm red */
+  --stage-failed-bg:      var(--crimson-muted);
+  --stage-failed-border: oklch(0.64 0.21 25);
+  --stage-failed-fg:     oklch(0.70 0.21 25);
+
+  /* CANCELLED — neutral, withdrawn */
+  --stage-cancelled-bg:      var(--surface-2);
+  --stage-cancelled-border: var(--border-strong);
+  --stage-cancelled-fg:     var(--text-secondary);
+
+  /* SKIPPED — deliberately quiet, dashed */
+  --stage-skipped-bg:      transparent;
+  --stage-skipped-border: var(--border-dim);
+  --stage-skipped-fg:     var(--text-muted);
+}
+
+/* ── Stage-state chip (consumed by PipelineRail) ─────────────────────── */
+.stage-state-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  line-height: 1.5;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur) var(--ease-out);
+}
+
+.stage-state-chip--queued    { background: var(--stage-queued-bg);    border-color: var(--stage-queued-border);    color: var(--stage-queued-fg); }
+.stage-state-chip--active    { background: var(--stage-active-bg);    border-color: var(--stage-active-border);    color: var(--stage-active-fg); animation: stage-active-pulse 1.8s var(--ease-out) infinite; }
+.stage-state-chip--waiting   { background: var(--stage-waiting-bg);   border-color: var(--stage-waiting-border);   color: var(--stage-waiting-fg); }
+.stage-state-chip--blocked   { background: var(--stage-blocked-bg);   border-color: var(--stage-blocked-border);   color: var(--stage-blocked-fg); }
+.stage-state-chip--completed { background: var(--stage-completed-bg); border-color: var(--stage-completed-border); color: var(--stage-completed-fg); }
+.stage-state-chip--failed    { background: var(--stage-failed-bg);     border-color: var(--stage-failed-border);     color: var(--stage-failed-fg); }
+.stage-state-chip--cancelled { background: var(--stage-cancelled-bg); border-color: var(--stage-cancelled-border); color: var(--stage-cancelled-fg); }
+.stage-state-chip--skipped   { background: var(--stage-skipped-bg);   border-color: var(--stage-skipped-border);   color: var(--stage-skipped-fg); border-style: dashed; opacity: 0.72; }
+
+/* Subtle ring pulse for the in-flight stage */
+@keyframes stage-active-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 oklch(0.65 0.15 250 / 0.35); }
+  50%      { box-shadow: 0 0 0 3px oklch(0.65 0.15 250 / 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stage-state-chip--active { animation: none; }
+}

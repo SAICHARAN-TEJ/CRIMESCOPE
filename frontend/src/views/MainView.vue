@@ -142,11 +142,21 @@ function agentDotClass(status: string) {
 const recentLog = computed(() => store.eventLog.slice(-60))
 const pipelineSummary = computed(() => {
   const s = store.status
-  if (s === 'completed') return { label: 'COMPLETE', cls: 'badge--green' }
-  if (s === 'processing' || s === 'queued') return { label: s.toUpperCase(), cls: 'badge--amber' }
-  if (s === 'failed') return { label: 'FAILED', cls: 'badge--red' }
-  return { label: 'IDLE', cls: 'badge--slate' }
+  if (s === 'completed') return { label: 'COMPLETE', cls: 'stage-state-chip--completed' }
+  if (s === 'partial') return { label: 'PARTIAL', cls: 'stage-state-chip--waiting' }
+  if (s === 'processing') return { label: 'PROCESSING', cls: 'stage-state-chip--active' }
+  if (s === 'queued') return { label: 'QUEUED', cls: 'stage-state-chip--queued' }
+  if (s === 'failed') return { label: 'FAILED', cls: 'stage-state-chip--failed' }
+  return { label: 'IDLE', cls: 'stage-state-chip--queued' }
 })
+
+// ── Shell states ──────────────────────────────────────────────────────────
+// Connecting: run exists but WS hasn't produced observable state yet.
+const isConnecting = computed(() =>
+  hasRun.value && store.status === 'queued' && !store.orderedStages.length
+)
+// Terminal completion: PIPELINE_COMPLETE reached — every stage settled.
+const isComplete = computed(() => store.status === 'completed')
 
 // Event log footer: expanded by default (terminal + E2E rely on `.log__row`
 // visibility); the toggle lets analysts quiet the low-level stream.
@@ -175,7 +185,8 @@ onUnmounted(disconnectWS)
         <span v-else class="badge badge--slate">
           <span class="dot dot--idle" /> Not signed in
         </span>
-        <span class="badge" :class="pipelineSummary.cls">{{ pipelineSummary.label }}</span>
+        <span v-if="store.jobId" class="job-chip mono">JOB {{ store.jobId.slice(0, 8) }}</span>
+        <span class="stage-state-chip" :class="pipelineSummary.cls">{{ pipelineSummary.label }}</span>
       </div>
     </nav>
 
@@ -349,6 +360,20 @@ onUnmounted(disconnectWS)
           </button>
         </div>
 
+        <!-- Shell acknowledges global run state before/above the surface. -->
+        <div v-if="store.error" class="shell-state shell-state--error" role="alert">
+          <span class="shell-state__mark">!</span>
+          <p><strong>Run interrupted.</strong> {{ store.error }}</p>
+        </div>
+        <div v-else-if="isConnecting" class="shell-state shell-state--connecting" role="status">
+          <span class="shell-state__dot" />
+          <p>Connecting to the live event stream — the workspace fills in as the pipeline reports.</p>
+        </div>
+        <div v-else-if="isComplete" class="shell-state shell-state--complete" role="status">
+          <span class="shell-state__mark">✓</span>
+          <p><strong>Pipeline complete.</strong> All stages settled — findings are ready for review.</p>
+        </div>
+
         <!-- Before any run exists the center surface explains itself. -->
         <div v-if="!hasRun" class="surface-empty anim-fade-up">
           <span class="surface-empty__mark">○</span>
@@ -445,6 +470,64 @@ onUnmounted(disconnectWS)
 /* ── Warnings ───────────────────────────────────────────────────────── */
 .warn-list { display: flex; flex-direction: column; gap: 4px; padding-top: 6px; border-top: 1px solid var(--border); }
 .warn-list__item { color: var(--amber); font-size: 10.5px; }
+
+/* ── Shell chrome: quiet job chip (one step quieter than the board) ──── */
+.job-chip {
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ── Shell states (connecting / error / complete) ────────────────────── */
+.shell-state {
+  display: flex; align-items: center; gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius);
+  font-size: 12px; line-height: 1.45;
+}
+.shell-state p { max-width: none; font-size: 12px; }
+.shell-state strong { font-weight: 600; }
+.shell-state__mark, .shell-state__dot { flex: 0 0 auto; }
+.shell-state__mark {
+  width: 18px; height: 18px; border-radius: 50%;
+  display: grid; place-items: center;
+  font: 500 10px var(--font-mono);
+}
+.shell-state__dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  margin-left: 6px;
+}
+.shell-state--error {
+  border: 1px solid var(--stage-failed-border);
+  background: var(--stage-failed-bg);
+}
+.shell-state--error .shell-state__mark { background: var(--stage-failed-bg); color: var(--stage-failed-fg); border: 1px solid var(--stage-failed-border); }
+.shell-state--error p, .shell-state--error strong { color: var(--stage-failed-fg); }
+.shell-state--connecting {
+  border: 1px dashed var(--stage-skipped-border);
+}
+.shell-state--connecting .shell-state__dot {
+  background: var(--stage-active-fg);
+  animation: shell-idle-pulse 1.8s var(--ease-out) infinite;
+}
+.shell-state--connecting p { color: var(--text-secondary); }
+.shell-state--complete {
+  border: 1px solid var(--stage-completed-border);
+  background: var(--stage-completed-bg);
+}
+.shell-state--complete .shell-state__mark { background: var(--stage-completed-bg); color: var(--stage-completed-fg); border: 1px solid var(--stage-completed-border); }
+.shell-state--complete p, .shell-state--complete strong { color: var(--stage-completed-fg); }
+
+@keyframes shell-idle-pulse { 0%, 100% { opacity: 0.4; } 50% { opacity: 1; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .shell-state--connecting .shell-state__dot { animation: none; opacity: 0.7; }
+}
 
 /* ── Empty-state hero for the center surface ─────────────────────────── */
 .surface-empty {
