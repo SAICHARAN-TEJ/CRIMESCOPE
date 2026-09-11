@@ -1,9 +1,12 @@
 <script setup lang="ts">
-import { ref, computed, onUnmounted } from 'vue'
+import { ref, computed, watch, onUnmounted } from 'vue'
 import KnowledgeGraph from '@/components/graph/KnowledgeGraph.vue'
 import PersonaPanel from '@/components/PersonaPanel.vue'
 import ChatPanel from '@/components/ChatPanel.vue'
 import ScenarioOverlay from '@/components/ScenarioOverlay.vue'
+import InvestigationSurface from '@/components/workspace/InvestigationSurface.vue'
+import PipelineRail from '@/components/workspace/PipelineRail.vue'
+import InspectorPanel from '@/components/workspace/InspectorPanel.vue'
 import { useAnalysisStore } from '@/stores/analysisStore'
 import { login, presign, uploadFileDirect, startAnalysis } from '@/api'
 import { connectWS, disconnectWS } from '@/ws'
@@ -75,7 +78,14 @@ async function submitJob() {
   isSubmitting.value = true; submitError.value = ''
   const jobId = crypto.randomUUID()
   try {
-    store.startJob(jobId)
+    // Register staged evidence BEFORE the run starts so the investigation
+    // board shows source cards immediately — backend DECOMP_UPDATE events
+    // will fill in per-step progress once ingestion begins.
+    store.startJob(jobId, stagedFiles.value.map(f => ({
+      filename: f.name,
+      contentType: f.type || 'application/octet-stream',
+      sizeBytes: f.size,
+    })))
     connectWS(jobId, store.token)
     const uploaded: UploadFile[] = []
     for (const file of stagedFiles.value) {
@@ -91,7 +101,28 @@ async function submitJob() {
   } finally { isSubmitting.value = false }
 }
 
-// ── Agent ─────────────────────────────────────────────────────────────────
+// ── Workspace surfaces ────────────────────────────────────────────────────
+// The center column hosts three surfaces. Graph and Scenario are always
+// reachable; Investigation unlocks the moment a run exists and becomes the
+// default because it is the surface that assembles from observed state.
+type SurfaceId = 'investigation' | 'graph' | 'scenario'
+
+const hasRun = computed(() =>
+  ['queued', 'processing', 'partial', 'completed'].includes(store.status)
+  || !!store.jobId
+)
+const activeSurface = ref<SurfaceId>('investigation')
+
+function selectSurface(surface: SurfaceId): void {
+  activeSurface.value = surface
+}
+
+// When a run begins, land on the investigation view — the observable story.
+watch(hasRun, (now, before) => {
+  if (now && !before) activeSurface.value = 'investigation'
+}, { immediate: true })
+
+// ── Agent (legacy left-rail list) ──────────────────────────────────────────
 // L-3: full pipeline + swarm vocabulary — no more raw `⚙ type` fallbacks.
 const AGENT_META: Record<string, { icon: string; label: string }> = {
   video:    { icon: '🎬', label: 'Video Transcription' },
@@ -117,23 +148,27 @@ const pipelineSummary = computed(() => {
   return { label: 'IDLE', cls: 'badge--slate' }
 })
 
+// Event log footer: expanded by default (terminal + E2E rely on `.log__row`
+// visibility); the toggle lets analysts quiet the low-level stream.
+const logOpen = ref(true)
+
 onUnmounted(disconnectWS)
 </script>
 
 <template>
-  <div class="app" id="crimescope-app">
+  <div class="console" id="crimescope-app">
 
     <!-- NAV -->
-    <nav class="nav">
-      <div class="nav__brand">
-        <svg class="nav__logo" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+    <nav class="console__nav">
+      <div class="console__brand">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
         </svg>
-        <span class="nav__name">CrimeScope</span>
+        <span class="console__name">CrimeScope</span>
         <span class="eyebrow" style="margin-left:4px;opacity:.5">v4.4</span>
       </div>
-      <div class="nav__right">
-        <router-link to="/demo" class="nav__demo-link" style="margin-right: 16px; color: var(--crimson); text-decoration: none; font-size: 13px;">View Demo →</router-link>
+      <div class="console__nav-right">
+        <router-link to="/demo" class="console__nav-link">View Demo →</router-link>
         <span v-if="isAuthed" class="badge badge--green">
           <span class="dot dot--ok" /> Authenticated
         </span>
@@ -145,10 +180,10 @@ onUnmounted(disconnectWS)
     </nav>
 
     <!-- BODY -->
-    <div class="body">
+    <div class="console__body">
 
-      <!-- SIDEBAR -->
-      <aside class="sidebar">
+      <!-- INTAKE SIDEBAR -->
+      <aside class="console__intake">
 
         <!-- LOGIN -->
         <section v-if="!isAuthed" class="panel anim-fade-up">
@@ -281,38 +316,89 @@ onUnmounted(disconnectWS)
 
       </aside>
 
-      <!-- WORKSPACE -->
-      <main class="workspace">
-        <div class="workspace-main">
-          <div class="graph-container">
+      <!-- CENTER: surfaces + pipeline rail -->
+      <main class="console__center">
+        <div class="console__tabs" role="tablist" aria-label="Workspace surfaces">
+          <button
+            class="console__tab"
+            :class="{ 'console__tab--active': activeSurface === 'investigation' }"
+            :disabled="!hasRun"
+            role="tab"
+            :aria-selected="activeSurface === 'investigation'"
+            @click="selectSurface('investigation')"
+          >
+            Investigation
+          </button>
+          <button
+            class="console__tab"
+            :class="{ 'console__tab--active': activeSurface === 'graph' }"
+            role="tab"
+            :aria-selected="activeSurface === 'graph'"
+            @click="activeSurface = 'graph'"
+          >
+            Graph
+          </button>
+          <button
+            class="console__tab"
+            :class="{ 'console__tab--active': activeSurface === 'scenario' }"
+            role="tab"
+            :aria-selected="activeSurface === 'scenario'"
+            @click="activeSurface = 'scenario'"
+          >
+            Scenario
+          </button>
+        </div>
+
+        <!-- Before any run exists the center surface explains itself. -->
+        <div v-if="!hasRun" class="surface-empty anim-fade-up">
+          <span class="surface-empty__mark">○</span>
+          <h2>Investigation workspace</h2>
+          <p>Sign in and start an analysis. As the run progresses, this surface shows evidence decomposition, stage-by-stage telemetry, and the live activity record — all tied to observed backend states.</p>
+          <p class="surface-empty__hint mono">NO ACTIVE RUN</p>
+        </div>
+
+        <div v-else class="console__surface">
+          <InvestigationSurface v-if="activeSurface === 'investigation'" />
+          <div v-else-if="activeSurface === 'graph'" class="surface-frame">
             <KnowledgeGraph />
           </div>
-          <div class="scenario-container" v-if="isAuthed">
+          <div v-else class="surface-frame">
             <ScenarioOverlay />
           </div>
         </div>
 
-        <aside class="swarm-sidebar" v-if="isAuthed">
-          <div class="panel-wrapper">
+        <!-- Pipeline rail persists under the active surface for the whole run. -->
+        <PipelineRail v-if="hasRun" />
+      </main>
+
+      <!-- RIGHT RAIL: inspector above persona + chat -->
+      <aside class="console__rail" v-if="isAuthed">
+        <div class="console__rail-scroll">
+          <InspectorPanel class="rail-inspector" />
+          <div class="rail-panel">
             <PersonaPanel />
           </div>
-          <div class="panel-wrapper">
+          <div class="rail-panel rail-panel--chat">
             <ChatPanel />
           </div>
-        </aside>
-      </main>
+        </div>
+      </aside>
 
     </div>
 
-    <!-- EVENT LOG -->
-    <footer class="log" role="log" aria-live="polite" aria-label="Real-time event log">
-      <div class="log__header">
-        <span class="eyebrow">Real-time Event Log</span>
-        <span v-if="store.droppedMessageCount" class="eyebrow" style="color:var(--amber)">
-          {{ store.droppedMessageCount }} dropped
+    <!-- EVENT LOG — low-level footer disclosure -->
+    <footer class="log" :class="{ 'log--collapsed': !logOpen }" role="log" aria-live="polite" aria-label="Real-time event log">
+      <button class="log__toggle" type="button" @click="logOpen = !logOpen" :aria-expanded="logOpen">
+        <span class="log__toggle-label">
+          <span class="log__toggle-glyph">{{ logOpen ? '▾' : '▸' }}</span>
+          Real-time Event Log
         </span>
-      </div>
-      <div class="log__body">
+        <span class="eyebrow">
+          {{ recentLog.length }} event{{ recentLog.length === 1 ? '' : 's' }}
+          <span v-if="store.droppedMessageCount" style="color:var(--amber)"> · {{ store.droppedMessageCount }} dropped</span>
+        </span>
+      </button>
+      <div v-if="logOpen" class="log__body">
         <template v-if="recentLog.length">
           <div
             v-for="(ev, i) in recentLog"
@@ -333,178 +419,59 @@ onUnmounted(disconnectWS)
 </template>
 
 <style scoped>
-/* ── Layout ─────────────────────────────────────────────────────────────── */
-.app { min-height: 100vh; display: flex; flex-direction: column; background: var(--bg); }
-
-.nav {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 0 var(--space-6); height: 56px;
-  background: var(--surface); border-bottom: 1px solid var(--border);
-  box-shadow: var(--shadow-xs); flex-shrink: 0; gap: 12px; flex-wrap: wrap;
-  position: sticky; top: 0; z-index: 50;
-}
-.nav__brand { display: flex; align-items: center; gap: 10px; }
-.nav__logo { color: var(--crimson); }
-.nav__name { font-family: var(--font-display); font-size: 18px; color: var(--text-heading); letter-spacing: -0.02em; }
-.nav__right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-
-.body { display: flex; flex: 1; min-height: 0; overflow: hidden; }
-
-/* ── Sidebar ─────────────────────────────────────────────────────────────── */
-.sidebar {
-  width: 320px; flex-shrink: 0;
-  background: var(--bg-alt); border-right: 1px solid var(--border);
-  overflow-y: auto; padding: var(--space-5);
-  display: flex; flex-direction: column; gap: var(--space-4);
-}
-
-/* ── Panel ───────────────────────────────────────────────────────────────── */
-.panel {
-  background: var(--surface); border: 1px solid var(--border);
-  border-radius: var(--radius-lg); padding: var(--space-5);
-  box-shadow: var(--shadow-sm); display: flex; flex-direction: column; gap: var(--space-3);
-}
-.panel--warm { background: var(--ivory-dark); }
+/* ── Panel headings (kept from legacy intake styling) ─────────────────── */
 .panel__label { color: var(--crimson); }
-.panel__title { font-size: 1.1rem; color: var(--text-heading); font-family: var(--font-display); }
+.panel__title { font-size: 1.1rem; color: var(--text-primary); font-family: var(--font-display); }
 .panel__desc  { font-size: 13px; color: var(--text-secondary); line-height: 1.5; max-width: none; }
+.panel--warm  { background: var(--surface-2); }
 
-/* ── Form ────────────────────────────────────────────────────────────────── */
-.form { display: flex; flex-direction: column; gap: var(--space-3); }
-.form__error { font-size: 12px; color: var(--crimson); line-height: 1.4; }
-
-/* ── Drop Zone ───────────────────────────────────────────────────────────── */
-.dropzone {
-  border: 2px dashed var(--border); border-radius: var(--radius-lg);
-  padding: var(--space-6) var(--space-4); text-align: center; cursor: pointer;
-  display: flex; flex-direction: column; align-items: center; gap: var(--space-2);
-  transition: border-color var(--dur-fast), background var(--dur-fast);
-}
-.dropzone:hover, .dropzone--active {
-  border-color: var(--crimson); background: var(--crimson-muted);
-}
-.dropzone__icon { color: var(--clay); transition: color var(--dur-fast); }
-.dropzone:hover .dropzone__icon, .dropzone--active .dropzone__icon { color: var(--crimson); }
-.dropzone__text { font-size: 13px; color: var(--text-secondary); }
-.dropzone__link { color: var(--crimson); text-decoration: underline; text-underline-offset: 2px; }
-.dropzone__hint { margin-top: 2px; }
-
-/* ── File List ───────────────────────────────────────────────────────────── */
-.file-list { list-style: none; display: flex; flex-direction: column; gap: 6px; }
-.file-item {
-  display: grid; grid-template-columns: auto 1fr auto auto;
-  align-items: center; gap: 8px;
-  background: var(--ivory-dark); border: 1px solid var(--border);
-  border-radius: var(--radius); padding: 8px 10px; font-size: 12px;
-}
-.file-item__icon { font-size: 15px; }
-.file-item__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-primary); }
-.file-item__size { color: var(--clay); }
-.file-item__rm {
-  background: none; border: none; cursor: pointer; color: var(--clay);
-  padding: 0; line-height: 1; font-size: 11px; transition: color var(--dur-fast);
-}
-.file-item__rm:hover { color: var(--crimson); }
-
-/* ── Agents ──────────────────────────────────────────────────────────────── */
+/* ── Agents (legacy left-rail list) ──────────────────────────────────── */
 .agents { display: flex; flex-direction: column; gap: 10px; }
 .agent {
   display: flex; align-items: center; gap: 10px;
   padding: 10px; border-radius: var(--radius);
-  background: var(--ivory-dark); border: 1px solid var(--border);
+  background: var(--surface-2); border: 1px solid var(--border);
 }
 .agent__icon { font-size: 15px; }
 .agent__info { flex: 1; display: flex; flex-direction: column; gap: 2px; }
 .agent__label { font-size: 13px; font-weight: 500; color: var(--text-primary); }
-.agent__status { color: var(--clay); }
+.agent__status { color: var(--text-muted); }
 
-/* ── Stats ───────────────────────────────────────────────────────────────── */
+/* ── Stats ──────────────────────────────────────────────────────────── */
 .stats { display: flex; gap: var(--space-4); }
 .stat { display: flex; flex-direction: column; align-items: center; flex: 1; gap: 2px; }
-.stat__value { font-size: 22px; font-weight: 600; color: var(--text-heading); }
-.stat__label { }
+.stat__value { font-size: 22px; font-weight: 600; color: var(--text-primary); }
 
-/* ── Warnings ────────────────────────────────────────────────────────────── */
+/* ── Warnings ───────────────────────────────────────────────────────── */
 .warn-list { display: flex; flex-direction: column; gap: 4px; padding-top: 6px; border-top: 1px solid var(--border); }
 .warn-list__item { color: var(--amber); font-size: 10.5px; }
 
-/* ── Workspace ───────────────────────────────────────────────────────────── */
-.workspace {
-  flex: 1;
-  display: flex;
-  min-width: 0;
-  overflow: hidden;
-  background: var(--bg);
+/* ── Empty-state hero for the center surface ─────────────────────────── */
+.surface-empty {
+  flex: 1; min-height: 0;
+  display: flex; flex-direction: column; align-items: flex-start; justify-content: center;
+  gap: var(--space-3);
+  border: 1px dashed var(--border-strong); border-radius: var(--radius-lg);
+  padding: var(--space-10) var(--space-8);
+  max-width: 640px; margin: auto;
+  background: var(--surface-1);
 }
+.surface-empty__mark { font: 30px var(--font-mono); color: var(--accent); line-height: 1; }
+.surface-empty h2 { font-size: 26px; font-weight: 400; }
+.surface-empty p { max-width: 52ch; font-size: 13px; line-height: 1.6; }
+.surface-empty__hint { color: var(--text-muted); font-size: 10px; letter-spacing: 0.14em; margin-top: var(--space-2); }
 
-.workspace-main {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  padding: var(--space-5);
-  gap: var(--space-5);
-}
+/* ── Surface frames (Graph / Scenario keep their own panels) ────────── */
+.surface-frame { display: flex; flex-direction: column; min-height: 0; }
 
-.graph-container {
-  flex: 2;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
+/* ── Right rail sizing ─────────────────────────────────────────────── */
+.rail-inspector { flex-shrink: 0; }
+.rail-panel { display: flex; flex-direction: column; min-height: 300px; flex-shrink: 0; }
+.rail-panel--chat { min-height: 360px; }
 
-.scenario-container {
-  flex: 1;
-  min-height: 250px;
-  display: flex;
-  flex-direction: column;
-}
-
-.swarm-sidebar {
-  width: 380px;
-  flex-shrink: 0;
-  border-left: 1px solid var(--border);
-  display: flex;
-  flex-direction: column;
-  background: var(--bg-alt);
-  padding: var(--space-5);
-  gap: var(--space-5);
-  overflow-y: auto;
-}
-
-.panel-wrapper {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-height: 300px;
-}
-
-/* ── Event Log ───────────────────────────────────────────────────────────── */
-.log {
-  height: 130px; flex-shrink: 0;
-  border-top: 1px solid var(--border); background: var(--ivory-dark);
-  display: flex; flex-direction: column; font-size: 12px;
-}
-.log__header {
-  display: flex; justify-content: space-between;
-  padding: 5px var(--space-6); border-bottom: 1px solid var(--border);
-  flex-shrink: 0; background: var(--surface);
-}
-.log__body { flex: 1; overflow-y: auto; padding: 4px var(--space-6); display: flex; flex-direction: column; gap: 1px; }
-.log__row { display: flex; gap: 10px; align-items: baseline; padding: 2px 0; color: var(--text-secondary); }
-.log__row--error { color: var(--crimson); }
-.log__row--ok    { color: var(--forest); }
-.log__tag  { font-size: 10px; color: var(--brown); white-space: nowrap; font-family: var(--font-mono); }
-.log__agent { color: var(--clay); white-space: nowrap; }
-.log__msg  { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.log__empty { color: var(--clay); padding: 8px 0; }
-
-/* ── Responsive ──────────────────────────────────────────────────────────── */
-@media (max-width: 768px) {
-  .body { flex-direction: column; overflow: auto; }
-  .workspace { flex-direction: column; }
-  .swarm-sidebar { width: 100%; border-left: none; border-top: 1px solid var(--border); }
-  .graph-container { min-height: 400px; }
-  .log { height: 110px; }
+/* 1366×768 — reclaim vertical space from the fixed rail panels */
+@media (max-height: 820px) and (min-width: 1181px) {
+  .rail-panel { min-height: 240px; }
+  .rail-panel--chat { min-height: 300px; }
 }
 </style>

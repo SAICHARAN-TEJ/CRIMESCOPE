@@ -4,6 +4,9 @@ import KnowledgeGraph from '@/components/graph/KnowledgeGraph.vue'
 import PersonaPanel from '@/components/PersonaPanel.vue'
 import ChatPanel from '@/components/ChatPanel.vue'
 import ScenarioOverlay from '@/components/ScenarioOverlay.vue'
+import InvestigationSurface from '@/components/workspace/InvestigationSurface.vue'
+import PipelineRail from '@/components/workspace/PipelineRail.vue'
+import InspectorPanel from '@/components/workspace/InspectorPanel.vue'
 import { useAnalysisStore } from '@/stores/analysisStore'
 import { DemoController } from './controller'
 
@@ -28,6 +31,13 @@ function submitJob() {
   isSubmitting.value = true
   controller.startSequence()
 }
+
+// ── Workspace surfaces ────────────────────────────────────────────────────
+// The demo defaults to the investigation surface so the sequence is visible
+// as it happens; Graph and Scenario remain one tab away.
+type SurfaceId = 'investigation' | 'graph' | 'scenario'
+const hasRun = computed(() => !!store.jobId)
+const activeSurface = ref<SurfaceId>('investigation')
 
 // ── Agent ─────────────────────────────────────────────────────────────────
 // Full 8-agent vocabulary (demo startSequence fires them all).
@@ -54,37 +64,42 @@ const pipelineSummary = computed(() => {
   if (s === 'failed') return { label: 'FAILED', cls: 'badge--red' }
   return { label: 'IDLE', cls: 'badge--slate' }
 })
+
+// Keep the technical disclosure visible by default for deterministic demo
+// playback and the existing E2E contract; analysts can still collapse it.
+const logOpen = ref(true)
 </script>
 
 <template>
-  <div class="app" id="crimescope-app-demo">
+  <div class="console" id="crimescope-app-demo">
 
     <!-- DEMO BANNER -->
     <div class="demo-banner">Demo Mode — Sample Data</div>
 
     <!-- NAV -->
-    <nav class="nav">
-      <div class="nav__brand">
-        <svg class="nav__logo" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+    <nav class="console__nav">
+      <div class="console__brand">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
         </svg>
-        <span class="nav__name">CrimeScope</span>
+        <span class="console__name">CrimeScope</span>
       </div>
-      <div class="nav__right">
-        <router-link to="/" class="nav__demo-link" style="margin-right: 16px; color: var(--crimson); text-decoration: none; font-size: 13px;">Exit Demo ✕</router-link>
+      <div class="console__nav-right">
+        <router-link to="/" class="console__nav-link">Exit Demo ✕</router-link>
         <span class="badge" :class="pipelineSummary.cls">{{ pipelineSummary.label }}</span>
       </div>
     </nav>
 
     <!-- BODY -->
-    <div class="body">
-      <!-- SIDEBAR -->
-      <aside class="sidebar">
-        <!-- UPLOAD (Simulated) -->
+    <div class="console__body">
+
+      <!-- INTAKE SIDEBAR -->
+      <aside class="console__intake">
+        <!-- RUN CONTROL (Simulated) -->
         <section class="panel anim-fade-up">
           <p class="panel__label eyebrow">Evidence Intake</p>
           <h2 class="panel__title">Upload Files</h2>
-          <p class="panel__desc">Click to start simulated analysis sequence.</p>
+          <p class="panel__desc">Click to start the simulated analysis sequence.</p>
 
           <div class="dropzone" @click="submitJob" role="button" aria-label="Upload evidence files">
             <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="dropzone__icon">
@@ -130,34 +145,84 @@ const pipelineSummary = computed(() => {
         </section>
       </aside>
 
-      <!-- WORKSPACE -->
-      <main class="workspace">
-        <div class="workspace-main">
-          <div class="graph-container">
+      <!-- CENTER: surfaces + pipeline rail -->
+      <main class="console__center">
+        <div class="console__tabs" role="tablist" aria-label="Workspace surfaces">
+          <button
+            class="console__tab"
+            :class="{ 'console__tab--active': activeSurface === 'investigation' }"
+            :disabled="!hasRun"
+            role="tab"
+            :aria-selected="activeSurface === 'investigation'"
+            @click="activeSurface = 'investigation'"
+          >
+            Investigation
+          </button>
+          <button
+            class="console__tab"
+            :class="{ 'console__tab--active': activeSurface === 'graph' }"
+            role="tab"
+            :aria-selected="activeSurface === 'graph'"
+            @click="activeSurface = 'graph'"
+          >
+            Graph
+          </button>
+          <button
+            class="console__tab"
+            :class="{ 'console__tab--active': activeSurface === 'scenario' }"
+            role="tab"
+            :aria-selected="activeSurface === 'scenario'"
+            @click="activeSurface = 'scenario'"
+          >
+            Scenario
+          </button>
+        </div>
+
+        <div v-if="!hasRun" class="surface-empty anim-fade-up">
+          <span class="surface-empty__mark">○</span>
+          <h2>Demo investigation</h2>
+          <p>Start the sequence to watch a full run assemble: evidence registration, stage telemetry, graph construction, and the recorded activity — every card tied to a state the pipeline actually reported.</p>
+          <p class="surface-empty__hint mono">AWAITING DEMO RUN</p>
+        </div>
+
+        <div v-else class="console__surface">
+          <InvestigationSurface v-if="activeSurface === 'investigation'" />
+          <div v-else-if="activeSurface === 'graph'" class="surface-frame">
             <KnowledgeGraph />
           </div>
-          <div class="scenario-container">
+          <div v-else class="surface-frame">
             <ScenarioOverlay />
           </div>
         </div>
 
-        <aside class="swarm-sidebar">
-          <div class="panel-wrapper">
+        <PipelineRail v-if="hasRun" />
+      </main>
+
+      <!-- RIGHT RAIL: inspector + persona + chat -->
+      <aside class="console__rail">
+        <div class="console__rail-scroll">
+          <InspectorPanel class="rail-inspector" />
+          <div class="rail-panel">
             <PersonaPanel />
           </div>
-          <div class="panel-wrapper">
+          <div class="rail-panel rail-panel--chat">
             <ChatPanel />
           </div>
-        </aside>
-      </main>
+        </div>
+      </aside>
+
     </div>
 
-    <!-- EVENT LOG -->
-    <footer class="log" role="log" aria-live="polite">
-      <div class="log__header">
-        <span class="eyebrow">Real-time Event Log</span>
-      </div>
-      <div class="log__body">
+    <!-- EVENT LOG — low-level footer disclosure -->
+    <footer class="log" :class="{ 'log--collapsed': !logOpen }" role="log" aria-live="polite">
+      <button class="log__toggle" type="button" @click="logOpen = !logOpen" :aria-expanded="logOpen">
+        <span class="log__toggle-label">
+          <span class="log__toggle-glyph">{{ logOpen ? '▾' : '▸' }}</span>
+          Real-time Event Log
+        </span>
+        <span class="eyebrow">{{ recentLog.length }} event{{ recentLog.length === 1 ? '' : 's' }}</span>
+      </button>
+      <div v-if="logOpen" class="log__body">
         <template v-if="recentLog.length">
           <div v-for="(ev, i) in recentLog" :key="i" class="log__row">
             <code class="log__tag">{{ ev.event }}</code>
@@ -174,7 +239,7 @@ const pipelineSummary = computed(() => {
 <style scoped>
 .demo-banner {
   background: var(--amber);
-  color: var(--bg);
+  color: oklch(0.18 0.02 250);
   text-align: center;
   font-family: var(--font-display);
   font-size: 13px;
@@ -183,46 +248,51 @@ const pipelineSummary = computed(() => {
   text-transform: uppercase;
   letter-spacing: 0.05em;
   z-index: 100;
+  flex-shrink: 0;
 }
-.app { min-height: 100vh; display: flex; flex-direction: column; background: var(--bg); }
-.nav { display: flex; align-items: center; justify-content: space-between; padding: 0 var(--space-6); height: 56px; background: var(--surface); border-bottom: 1px solid var(--border); box-shadow: var(--shadow-xs); flex-shrink: 0; position: sticky; top: 0; z-index: 50; }
-.nav__brand { display: flex; align-items: center; gap: 10px; }
-.nav__logo { color: var(--crimson); }
-.nav__name { font-family: var(--font-display); font-size: 18px; color: var(--text-heading); }
-.nav__right { display: flex; align-items: center; gap: 8px; }
-.body { display: flex; flex: 1; min-height: 0; overflow: hidden; }
-.sidebar { width: 320px; flex-shrink: 0; background: var(--bg-alt); border-right: 1px solid var(--border); overflow-y: auto; padding: var(--space-5); display: flex; flex-direction: column; gap: var(--space-4); }
-.panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: var(--space-5); display: flex; flex-direction: column; gap: var(--space-3); }
-.panel--warm { background: var(--ivory-dark); }
+
 .panel__label { color: var(--crimson); }
-.panel__title { font-size: 1.1rem; color: var(--text-heading); font-family: var(--font-display); }
+.panel__title { font-size: 1.1rem; color: var(--text-primary); font-family: var(--font-display); }
 .panel__desc { font-size: 13px; color: var(--text-secondary); }
-.dropzone { border: 2px dashed var(--border); border-radius: var(--radius-lg); padding: var(--space-6) var(--space-4); text-align: center; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: var(--space-2); }
-.dropzone:hover { border-color: var(--crimson); background: var(--crimson-muted); }
-.dropzone__icon { color: var(--clay); }
-.dropzone:hover .dropzone__icon { color: var(--crimson); }
-.dropzone__text { font-size: 13px; color: var(--text-secondary); }
+.panel--warm { background: var(--surface-2); }
+
 .agents { display: flex; flex-direction: column; gap: 10px; }
-.agent { display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: var(--radius); background: var(--ivory-dark); border: 1px solid var(--border); }
+.agent {
+  display: flex; align-items: center; gap: 10px; padding: 10px;
+  border-radius: var(--radius);
+  background: var(--surface-2); border: 1px solid var(--border);
+}
 .agent__icon { font-size: 15px; }
 .agent__info { flex: 1; display: flex; flex-direction: column; gap: 2px; }
 .agent__label { font-size: 13px; font-weight: 500; color: var(--text-primary); }
-.agent__status { color: var(--clay); }
+.agent__status { color: var(--text-muted); }
+
 .stats { display: flex; gap: var(--space-4); }
 .stat { display: flex; flex-direction: column; align-items: center; flex: 1; gap: 2px; }
-.stat__value { font-size: 22px; font-weight: 600; color: var(--text-heading); }
-.workspace { flex: 1; display: flex; min-width: 0; overflow: hidden; background: var(--bg); }
-.workspace-main { flex: 1; display: flex; flex-direction: column; min-width: 0; padding: var(--space-5); gap: var(--space-5); }
-.graph-container { flex: 2; min-height: 0; display: flex; flex-direction: column; }
-.scenario-container { flex: 1; min-height: 250px; display: flex; flex-direction: column; }
-.swarm-sidebar { width: 380px; flex-shrink: 0; border-left: 1px solid var(--border); display: flex; flex-direction: column; background: var(--bg-alt); padding: var(--space-5); gap: var(--space-5); overflow-y: auto; }
-.panel-wrapper { display: flex; flex-direction: column; flex: 1; min-height: 300px; }
-.log { height: 130px; flex-shrink: 0; border-top: 1px solid var(--border); background: var(--ivory-dark); display: flex; flex-direction: column; font-size: 12px; }
-.log__header { display: flex; justify-content: space-between; padding: 5px var(--space-6); border-bottom: 1px solid var(--border); flex-shrink: 0; background: var(--surface); }
-.log__body { flex: 1; overflow-y: auto; padding: 4px var(--space-6); display: flex; flex-direction: column; gap: 1px; }
-.log__row { display: flex; gap: 10px; align-items: baseline; padding: 2px 0; color: var(--text-secondary); }
-.log__tag { font-size: 10px; color: var(--brown); font-family: var(--font-mono); }
-.log__agent { color: var(--clay); }
-.log__msg { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.log__empty { color: var(--clay); padding: 8px 0; }
+.stat__value { font-size: 22px; font-weight: 600; color: var(--text-primary); }
+
+.surface-empty {
+  flex: 1; min-height: 0;
+  display: flex; flex-direction: column; align-items: flex-start; justify-content: center;
+  gap: var(--space-3);
+  border: 1px dashed var(--border-strong); border-radius: var(--radius-lg);
+  padding: var(--space-10) var(--space-8);
+  max-width: 640px; margin: auto;
+  background: var(--surface-1);
+}
+.surface-empty__mark { font: 30px var(--font-mono); color: var(--accent); line-height: 1; }
+.surface-empty h2 { font-size: 26px; font-weight: 400; }
+.surface-empty p { max-width: 52ch; font-size: 13px; line-height: 1.6; }
+.surface-empty__hint { color: var(--text-muted); font-size: 10px; letter-spacing: 0.14em; margin-top: var(--space-2); }
+
+.surface-frame { display: flex; flex-direction: column; min-height: 0; }
+
+.rail-inspector { flex-shrink: 0; }
+.rail-panel { display: flex; flex-direction: column; min-height: 300px; flex-shrink: 0; }
+.rail-panel--chat { min-height: 360px; }
+
+@media (max-height: 820px) and (min-width: 1181px) {
+  .rail-panel { min-height: 240px; }
+  .rail-panel--chat { min-height: 300px; }
+}
 </style>

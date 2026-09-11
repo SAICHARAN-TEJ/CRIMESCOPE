@@ -47,7 +47,10 @@ MAX_CLIENT_MSG_SIZE = 4096        # max inbound message size (bytes)
 JOB_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_\-]{1,128}$")
 
 # Events that bypass batching and are sent immediately
-IMMEDIATE_EVENTS = {"JOB_STARTED", "PIPELINE_COMPLETE", "CONNECTED"}
+IMMEDIATE_EVENTS = {
+    "JOB_STARTED", "PIPELINE_COMPLETE", "CONNECTED", "STAGE_UPDATE",
+    "AGENT_WAITING",
+}
 
 # Global connection semaphore
 _connection_semaphore = asyncio.Semaphore(MAX_CONCURRENT_CONNECTIONS)

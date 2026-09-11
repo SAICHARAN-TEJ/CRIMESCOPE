@@ -42,12 +42,45 @@ class EventType(str, Enum):
     PIPELINE_COMPLETE = "PIPELINE_COMPLETE"
     HEARTBEAT = "HEARTBEAT"
     BATCH_UPDATE = "BATCH_UPDATE"
+    # ── Observable Investigation Events (contract docs/OBSERVABLE_CONTRACT.md) ─
+    STAGE_UPDATE = "STAGE_UPDATE"
+    ACTIVITY = "ACTIVITY"
+    DECOMP_UPDATE = "DECOMP_UPDATE"
+    AGENT_WAITING = "AGENT_WAITING"
     # ── Swarm Intelligence Events ─────────────────────────────────
     PERSONA_INSIGHT = "PERSONA_INSIGHT"
     REPORT_CHUNK = "REPORT_CHUNK"
     CONSENSUS_RESULT = "CONSENSUS_RESULT"
     SCENARIO_DIFF = "SCENARIO_DIFF"
     SCENARIO_EVAL = "SCENARIO_EVAL"
+
+
+class StageState(str, Enum):
+    """Lifecycle states for observable pipeline stages."""
+    QUEUED = "QUEUED"
+    ACTIVE = "ACTIVE"
+    WAITING = "WAITING"
+    BLOCKED = "BLOCKED"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+    CANCELLED = "CANCELLED"
+    SKIPPED = "SKIPPED"
+
+
+class DecompState(str, Enum):
+    """Lifecycle states for an individual evidence decomposition step."""
+    PENDING = "pending"
+    ACTIVE = "active"
+    DONE = "done"
+    FAILED = "failed"
+
+
+class ActivityLevel(str, Enum):
+    """Semantic severity used by the operations activity stream."""
+    INFO = "info"
+    SUCCESS = "success"
+    WARN = "warn"
+    ERROR = "error"
 
 
 class JobStatus(str, Enum):
@@ -85,6 +118,51 @@ class GraphEdgeEvent(BaseModel):
     target: str
     label: str
     properties: dict[str, Any] = Field(default_factory=dict)
+
+
+# ── Observable Investigation Payloads (docs/OBSERVABLE_CONTRACT.md §3) ────
+# Lax validation (default model config) on purpose: these payloads cross the
+# Redis→WS JSON boundary as plain strings/dicts, matching every other model
+# in this module. The only hard bound is ActivityData.text (≤120 chars).
+
+
+class StageUpdateData(BaseModel):
+    """Payload for STAGE_UPDATE events — one pipeline stage transition."""
+    stage: str = Field(max_length=32)
+    state: StageState
+    label: str = Field(max_length=64)
+    detail: str = Field(default="", max_length=255)
+    agents: list[str] = Field(default_factory=list)
+    item_count: int | None = Field(default=None, ge=0)
+    started_at: str | None = None
+    completed_at: str | None = None
+
+
+class ActivityData(BaseModel):
+    """Payload for ACTIVITY events — one semantic activity-stream line."""
+    actor: str = Field(min_length=1, max_length=32)
+    stage: str = Field(min_length=1, max_length=32)
+    text: str = Field(max_length=120)
+    level: ActivityLevel = ActivityLevel.INFO
+    metrics: dict[str, Any] | None = None
+
+
+class DecompUpdateData(BaseModel):
+    """Payload for DECOMP_UPDATE events — per-evidence decomposition step."""
+    evidence_id: str = Field(min_length=1, max_length=255)
+    filename: str = Field(min_length=1, max_length=255)
+    step: str = Field(min_length=1, max_length=64)
+    state: DecompState
+    detail: str = Field(default="", max_length=255)
+    progress: dict[str, Any] | None = None  # {current, total} — real counts only
+
+
+class AgentWaitingData(BaseModel):
+    """Payload for AGENT_WAITING — explicit dependency telemetry."""
+    agent: str = Field(min_length=1, max_length=32)
+    reason: str = Field(min_length=1, max_length=255)
+    upstream: list[dict[str, str]] = Field(default_factory=list)
+    expected_next: str | None = Field(default=None, max_length=64)
 
 
 # ── API Request Models ────────────────────────────────────────────────────

@@ -30,11 +30,16 @@ from app.engine.agents.entity import EntityAgent
 from app.engine.agents.graph import GraphAgent
 from app.engine.agents.persona import PersonaAgent, get_default_personas
 from app.schemas.events import (
+    ActivityData,
+    ActivityLevel,
     AgentResult,
     AgentType,
+    AgentWaitingData,
     EventType,
     JobStatus,
     PipelineResult,
+    StageState,
+    StageUpdateData,
     WSEvent,
 )
 
@@ -44,6 +49,118 @@ logger = get_logger("crimescope.engine.supervisor")
 AGENT_TIMEOUT = 120  # seconds
 CELERY_POLL_INTERVAL = 0.5  # seconds between result checks
 CELERY_MAX_WAIT = 300  # max wait for Celery task (5 min)
+
+
+def _now_iso() -> str:
+    from datetime import UTC, datetime
+
+    return datetime.now(UTC).isoformat()
+
+
+class _StageTracker:
+    """Emits honest STAGE_UPDATE/ACTIVITY pairs for the observable pipeline.
+
+    One instance per Supervisor.run() call. Tracks first-ACTIVE timestamps so
+    `started_at` is recorded exactly once per stage, and emits a terminal
+    transition only when the stage has actually been started (a terminal for
+    an un-started stage would be a lie about work that never ran).
+    """
+
+    def __init__(self, job_id: str, attempt: int | None) -> None:
+        self._job_id = job_id
+        self._attempt = attempt
+        self._started_at: dict[str, str] = {}
+
+    async def _publish(self, event: WSEvent) -> None:
+        try:
+            redis = get_redis()
+            await redis.publish_event(self._job_id, event.model_dump())
+        except Exception as e:  # Best-effort — never fail the pipeline over UI
+            logger.warning(f"[Stages] Failed to publish {event.event}: {e}")
+
+    async def transition(
+        self,
+        stage: str,
+        label: str,
+        state: StageState,
+        detail: str = "",
+        agents: list[str] | None = None,
+        item_count: int | None = None,
+        activity_text: str | None = None,
+        activity_level: str = "info",
+    ) -> None:
+        """Emit one STAGE_UPDATE (+ optional ACTIVITY twin)."""
+        terminal_states = {
+            StageState.COMPLETED,
+            StageState.FAILED,
+            StageState.CANCELLED,
+            StageState.SKIPPED,
+        }
+        now = _now_iso()
+        if state in (StageState.ACTIVE, StageState.WAITING) and stage not in self._started_at:
+            self._started_at[stage] = now
+
+        # Include the original start timestamp on every subsequent update so
+        # a replayed terminal event is self-describing.  A skipped stage that
+        # never ran intentionally has no started_at value.
+        started_at = self._started_at.get(stage)
+        completed_at = now if state in terminal_states else None
+
+        await self._publish(WSEvent(
+            event=EventType.STAGE_UPDATE,
+            job_id=self._job_id,
+            data=_with_job_attempt(StageUpdateData(
+                stage=stage,
+                state=state,
+                label=label,
+                detail=detail,
+                agents=agents or [],
+                item_count=item_count,
+                started_at=started_at,
+                completed_at=completed_at,
+            ).model_dump(), self._attempt),
+        ))
+        if activity_text:
+            await self.activity(stage, activity_text, level=activity_level)
+
+    async def waiting(
+        self,
+        agent: AgentType,
+        reason: str,
+        upstream: list[dict[str, str]],
+        expected_next: str,
+    ) -> None:
+        """Emit explicit dependency telemetry without exposing model thought."""
+        await self._publish(WSEvent(
+            event=EventType.AGENT_WAITING,
+            job_id=self._job_id,
+            agent=agent,
+            data=_with_job_attempt(AgentWaitingData(
+                agent=agent.value,
+                reason=reason,
+                upstream=upstream,
+                expected_next=expected_next,
+            ).model_dump(), self._attempt),
+        ))
+
+    async def activity(
+        self, stage: str, text: str, actor: str = "pipeline", level: str = "info"
+    ) -> None:
+        """Emit one semantic ACTIVITY line (bounded by schema to ≤120 chars)."""
+        try:
+            activity_level = ActivityLevel(level)
+        except ValueError:
+            activity_level = ActivityLevel.INFO
+        await self._publish(WSEvent(
+            event=EventType.ACTIVITY,
+            job_id=self._job_id,
+            data=_with_job_attempt(ActivityData(
+                actor=actor,
+                stage=stage,
+                text=text[:120],
+                level=activity_level,
+            ).model_dump(), self._attempt),
+        ))
 
 
 def _with_job_attempt(data: dict[str, Any], attempt: int | None) -> dict[str, Any]:
@@ -68,6 +185,15 @@ def _delay_with_attempt(
     if attempt is None:
         return task.delay(job_id, file_meta)
     return task.delay(job_id, file_meta, attempt)
+
+
+def _is_video_file(file_meta: dict[str, Any]) -> bool:
+    """Use the same modality routing rule for telemetry and dispatch."""
+    content_type = str(file_meta.get("content_type", ""))
+    filename = str(file_meta.get("filename", ""))
+    return content_type.startswith("video/") or filename.lower().endswith(
+        (".mp4", ".avi", ".mov", ".mkv", ".webm", ".wmv", ".flv")
+    )
 
 
 class Supervisor:
@@ -127,10 +253,70 @@ class Supervisor:
 
         logger.info(f"[Supervisor] Pipeline started: {job_id} ({len(files)} files)")
 
-        # ── Phase 1: Dispatch Video + Document to Celery workers ─────
+        stages = _StageTracker(job_id, attempt)
+
+        # ── INGEST: evidence received, pipeline beginning ─────────────
+        await stages.transition(
+            "ingest", "Ingest", StageState.ACTIVE,
+            detail=f"{len(files)} evidence item(s) received",
+            item_count=len(files),
+            activity_text=f"Evidence intake started — {len(files)} item(s)",
+        )
+
+        # ── Phase 1: Route and dispatch Video + Document workers ─────
         logger.info("[Supervisor] Phase 1: Dispatching to Celery workers")
 
+        # TRIAGE is a synchronous routing decision. Complete it before any
+        # worker is awaited so EXTRACT truthfully covers the poll interval.
+        await stages.transition(
+            "triage", "Triage", StageState.ACTIVE,
+            detail="routing evidence to extraction workers",
+            activity_text="Triage — routing evidence by modality",
+        )
+
+        video_count = sum(1 for file_meta in files if _is_video_file(file_meta))
+        document_count = len(files) - video_count
+        await stages.transition(
+            "triage", "Triage", StageState.COMPLETED,
+            detail=f"{video_count} video · {document_count} document worker(s) selected",
+            item_count=len(files),
+            activity_text=(
+                f"Triage complete — {video_count} video, {document_count} document item(s)"
+            ),
+        )
+        await stages.transition(
+            "ingest", "Ingest", StageState.COMPLETED,
+            detail=f"{len(files)} evidence item(s) registered",
+            item_count=len(files),
+        )
+
+        # EXTRACT is active before dispatch/polling. This is the key
+        # observable guarantee: the UI sees real work while workers run.
+        await stages.transition(
+            "extract", "Extract", StageState.ACTIVE,
+            detail="video and document extraction workers running",
+            agents=["video", "document"],
+            item_count=len(files),
+            activity_text="Extraction workers running",
+        )
+
+        # Entity resolution cannot begin until upstream extraction returns.
+        # This event is emitted before the await, not inferred after it.
+        if files:
+            upstream = []
+            if video_count:
+                upstream.append({"agent": "video", "status": "running"})
+            if document_count:
+                upstream.append({"agent": "document", "status": "running"})
+            await stages.waiting(
+                AgentType.ENTITY,
+                "waiting for extraction workers to return evidence chunks",
+                upstream=upstream,
+                expected_next="Entity resolution",
+            )
+
         text_chunks: list[str] = []
+        phase1_failed = False
         try:
             celery_results, phase1_chunks = await self._dispatch_celery_tasks(
                 job_id, files, attempt
@@ -144,14 +330,53 @@ class Supervisor:
                 success=False,
                 error=f"Phase 1 crashed: {e}",
             ))
+            phase1_failed = True
 
         logger.info(f"[Supervisor] Phase 1 complete: {len(text_chunks)} text chunks collected")
+
+        extract_failed = [
+            r for r in agent_results
+            if r.agent in (AgentType.VIDEO, AgentType.DOCUMENT) and not r.success
+        ]
+        if phase1_failed or extract_failed:
+            failure_count = len(extract_failed) or 1
+            await stages.transition(
+                "extract", "Extract", StageState.FAILED,
+                detail=f"{failure_count} extraction worker failure(s); partial results retained",
+                item_count=len(files),
+                activity_text=(
+                    f"Extraction finished with {failure_count} failure(s)"
+                ),
+                activity_level="warn",
+            )
+        else:
+            await stages.transition(
+                "extract", "Extract", StageState.COMPLETED,
+                detail=f"{len(text_chunks)} text chunks collected",
+                item_count=len(files),
+                activity_text=f"Extraction complete — {len(text_chunks)} text chunks",
+            )
 
         # ── Phase 2: Entity extraction via consensus swarm ─────────────
         # Run the parallel consensus layer (N EntityAgents → majority vote)
         # in front of graph merges. Falls back to a single extractor if the
         # swarm cannot reach quorum — disagreement is a confidence signal.
         logger.info(f"[Supervisor] Phase 2: Consensus entity extraction ({len(text_chunks)} chunks)")
+
+        # UNDERSTAND: entity consensus over extracted text
+        await stages.transition(
+            "understand", "Understand", StageState.ACTIVE,
+            detail=f"consensus entity extraction over {len(text_chunks)} chunks",
+            agents=["consensus", "entity"],
+            activity_text=f"Entity resolution — {len(text_chunks)} text chunks",
+        )
+
+        await stages.waiting(
+            AgentType.GRAPH,
+            "waiting for entity resolution to produce graph candidates",
+            upstream=[{"agent": "entity", "status": "running"}],
+            expected_next="Knowledge graph assembly",
+        )
 
         entity_payload = {**payload, "text_chunks": text_chunks}
         if text_chunks:
@@ -164,6 +389,12 @@ class Supervisor:
                 logger.warning(
                     "[Supervisor] Consensus failed, degrading to single EntityAgent"
                 )
+                await stages.transition(
+                    "understand", "Understand", StageState.WAITING,
+                    detail="consensus quorum failed — degrading to single extractor",
+                    agents=["entity"],
+                    activity_text="Consensus quorum failed — degrading to single extractor",
+                )
                 entity_result = await self._run_with_timeout(
                     "entity", self.entity_agent, job_id, entity_payload,
                 )
@@ -173,14 +404,44 @@ class Supervisor:
             )
         agent_results.append(entity_result)
 
-        # ── Phase 3: Graph writing via write-behind buffer ───────────
         all_entities = entity_result.entities if entity_result.success else []
         all_relationships = entity_result.relationships if entity_result.success else []
 
+        await stages.transition(
+            "understand", "Understand",
+            StageState.COMPLETED if entity_result.success else StageState.FAILED,
+            detail=(
+                f"{len(all_entities)} entities, {len(all_relationships)} relationships"
+                if entity_result.success else (entity_result.error or "entity extraction failed")
+            ),
+            item_count=len(all_entities),
+            activity_text=(
+                f"Entity resolution complete — {len(all_entities)} entities"
+                if entity_result.success else "Entity resolution failed"
+            ),
+        )
+
+        # ── Phase 3: Graph writing via write-behind buffer ───────────
         logger.info(
             f"[Supervisor] Phase 3: Graph writing "
             f"({len(all_entities)} entities, {len(all_relationships)} rels)"
         )
+
+        # CONNECT: knowledge-graph assembly
+        await stages.transition(
+            "connect", "Connect", StageState.ACTIVE,
+            detail="writing entities and relationships to the knowledge graph",
+            agents=["graph"],
+            activity_text=f"Graph assembly — {len(all_entities)} entities",
+        )
+
+        if all_entities:
+            await stages.waiting(
+                AgentType.PERSONA,
+                "waiting for the graph transaction to commit",
+                upstream=[{"agent": "graph", "status": "running"}],
+                expected_next="Persona review",
+            )
 
         graph_payload = {
             **payload,
@@ -192,12 +453,34 @@ class Supervisor:
         )
         agent_results.append(graph_result)
 
+        await stages.transition(
+            "connect", "Connect",
+            StageState.COMPLETED if graph_result.success else StageState.FAILED,
+            detail=(
+                "knowledge graph updated"
+                if graph_result.success else (graph_result.error or "graph write failed")
+            ),
+            activity_text=(
+                "Knowledge graph updated"
+                if graph_result.success else "Graph write failed"
+            ),
+        )
+
         # ── Phase 4: Persona Analysis (parallel, non-blocking) ────────
         settings = get_settings()
         if all_entities:  # Only run if we have entities to analyze
             logger.info(
                 f"[Supervisor] Phase 4: Persona analysis "
                 f"({settings.max_personas} personas, {len(all_entities)} entities)"
+            )
+
+            # CHALLENGE: multi-persona adversarial review of the entities
+            await stages.transition(
+                "challenge", "Challenge", StageState.ACTIVE,
+                detail=f"{settings.max_personas} persona analysts reviewing entities",
+                agents=["persona"],
+                item_count=len(all_entities),
+                activity_text=f"Persona analysis — {settings.max_personas} perspectives",
             )
             try:
                 persona_results = await self._run_persona_analysis(
@@ -211,6 +494,29 @@ class Supervisor:
                     success=False,
                     error=f"Persona analysis failed: {e}",
                 ))
+
+            persona_ok = any(
+                r.agent == AgentType.PERSONA and r.success for r in agent_results
+            )
+            await stages.transition(
+                "challenge", "Challenge",
+                StageState.COMPLETED if persona_ok else StageState.FAILED,
+                detail="persona review complete" if persona_ok else "persona review failed",
+                activity_text="Persona review complete" if persona_ok else "Persona review failed",
+            )
+        else:
+            # Honest skip — no entities means no persona stage can run.
+            await stages.transition(
+                "challenge", "Challenge", StageState.SKIPPED,
+                detail="no entities to analyze",
+            )
+
+        # VERIFY: the dedicated verification pass arrives in Phase 5 of the
+        # upgrade roadmap. Never fabricate a verification stage.
+        await stages.transition(
+            "verify", "Verify", StageState.SKIPPED,
+            detail="verification pass arrives in Phase 5",
+        )
 
         # ── Aggregate results ────────────────────────────────────────
         elapsed = (time.time() - start) * 1000
@@ -226,7 +532,30 @@ class Supervisor:
         else:
             status = JobStatus.FAILED
 
-        # Publish pipeline complete
+        # REPORT: final aggregation + result publish
+        await stages.transition(
+            "report", "Report", StageState.ACTIVE,
+            detail="assembling pipeline result",
+            activity_text="Assembling pipeline result",
+        )
+
+        # Complete the report stage before the terminal pipeline event. The
+        # Redis subscriber intentionally closes on PIPELINE_COMPLETE; emitting
+        # this after it would make the final report state unreachable to UI.
+        await stages.transition(
+            "report", "Report", StageState.COMPLETED,
+            detail=(
+                f"{total_entities} entities, {total_rels} relationships, "
+                f"status {status.value}"
+            ),
+            item_count=total_entities,
+            activity_text=(
+                f"Report ready — {total_entities} entities ({status.value})"
+            ),
+            activity_level="success" if status == JobStatus.COMPLETED else "warn",
+        )
+
+        # Publish pipeline complete last among lifecycle events.
         try:
             await redis.publish_event(job_id, WSEvent(
                 event=EventType.PIPELINE_COMPLETE,
@@ -285,11 +614,10 @@ class Supervisor:
         pending: list[tuple[str, Any, dict[str, Any]]] = []
 
         for file_meta in files:
-            content_type = file_meta.get("content_type", "")
             filename = file_meta.get("filename", "")
 
             try:
-                if content_type.startswith("video/") or filename.lower().endswith((".mp4", ".avi", ".mov")):
+                if _is_video_file(file_meta):
                     task = _delay_with_attempt(process_video, job_id, file_meta, attempt)
                     pending.append(("video", task, file_meta))
                 else:

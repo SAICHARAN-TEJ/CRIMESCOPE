@@ -35,6 +35,10 @@ export enum EventType {
   CONSENSUS_RESULT = "CONSENSUS_RESULT",
   SCENARIO_EVAL = "SCENARIO_EVAL",
   SCENARIO_DIFF = "SCENARIO_DIFF",
+  STAGE_UPDATE = "STAGE_UPDATE",
+  ACTIVITY = "ACTIVITY",
+  DECOMP_UPDATE = "DECOMP_UPDATE",
+  AGENT_WAITING = "AGENT_WAITING",
 }
 
 export enum JobStatus {
@@ -45,6 +49,120 @@ export enum JobStatus {
   PARTIAL = "partial",
 }
 
+// ── Observable investigation pipeline ────────────────────────────────────
+
+export const PIPELINE_STAGE_IDS = [
+  "ingest",
+  "triage",
+  "extract",
+  "understand",
+  "connect",
+  "challenge",
+  "verify",
+  "report",
+] as const
+
+export type PipelineStage = typeof PIPELINE_STAGE_IDS[number]
+
+export type StageState =
+  | "QUEUED"
+  | "ACTIVE"
+  | "WAITING"
+  | "BLOCKED"
+  | "COMPLETED"
+  | "FAILED"
+  | "CANCELLED"
+  | "SKIPPED"
+
+export type DecompState = "pending" | "active" | "done" | "failed"
+export type ActivityLevel = "info" | "success" | "warn" | "error"
+
+export interface StageUpdate {
+  stage: string
+  state: StageState
+  label: string
+  detail?: string
+  agents?: string[]
+  item_count?: number | null
+  started_at?: string | null
+  completed_at?: string | null
+}
+
+export interface ActivityEvent {
+  actor: string
+  stage: string
+  text: string
+  level?: ActivityLevel | string
+  metrics?: Record<string, unknown> | null
+}
+
+export interface DecompProgress {
+  current: number
+  total: number
+}
+
+export interface DecompUpdate {
+  evidence_id: string
+  filename: string
+  step: string
+  state: DecompState
+  detail?: string
+  progress?: DecompProgress | null
+}
+
+export interface AgentWaitingEvent {
+  agent: string
+  reason: string
+  upstream?: Array<{ agent: string; status: string }>
+  expected_next?: string | null
+}
+
+export interface StageRuntime {
+  stage: string
+  state: StageState
+  label: string
+  detail: string
+  agents: string[]
+  itemCount: number | null
+  startedAt: string | null
+  completedAt: string | null
+  elapsedMs: number
+}
+
+export interface DecompStepRuntime {
+  step: string
+  state: DecompState
+  detail: string
+  progress: DecompProgress | null
+  updatedAt: string
+  history: Array<{
+    state: DecompState
+    detail: string
+    progress: DecompProgress | null
+    timestamp: string
+  }>
+}
+
+export interface EvidenceRuntime {
+  evidenceId: string
+  filename: string
+  contentType?: string
+  sizeBytes?: number
+  hashVerified?: boolean
+  steps: Record<string, DecompStepRuntime>
+  firstSeenAt: string
+  updatedAt: string
+}
+
+export interface ActivityRuntime {
+  id: string
+  actor: string
+  stage: string
+  text: string
+  level: ActivityLevel
+  timestamp: string
+}
+
 // ── WebSocket Events ─────────────────────────────────────────────────────
 
 export interface WSEvent {
@@ -53,6 +171,7 @@ export interface WSEvent {
   agent?: AgentType;
   data: Record<string, unknown>;
   timestamp?: string;
+  sequence?: number;
 }
 
 // ── Graph Types ──────────────────────────────────────────────────────────
@@ -75,10 +194,12 @@ export interface GraphEdge {
 
 export interface AgentStatus {
   type: AgentType | string;
-  status: "idle" | "running" | "complete" | "error";
+  status: "idle" | "running" | "waiting" | "complete" | "error";
   processingTimeMs: number;
   entityCount: number;
   error?: string;
+  waitingReason?: string;
+  waitingFor?: Array<{ agent: string; status: string }>;
 }
 
 // ── Swarm Data Types ─────────────────────────────────────────────────────

@@ -24,21 +24,29 @@
  */
 
 import { defineStore } from "pinia";
-import { ref, computed, shallowRef, triggerRef } from "vue";
+import { computed, onScopeDispose, ref, shallowRef, triggerRef } from "vue";
 import type {
+  ActivityLevel,
+  ActivityEvent,
+  ActivityRuntime,
+  AgentWaitingEvent,
   AgentStatus,
   AgentType,
-  EventType,
+  DecompProgress,
+  DecompState,
+  DecompStepRuntime,
+  EvidenceRuntime,
   GraphNode,
   GraphEdge,
-  JobStatus,
+  PipelineStage,
+  StageRuntime,
+  StageState,
   VisNode,
   VisEdge,
   WSEvent,
   ChatMessage,
   ChatResponse,
   PersonaProfile,
-  PersonaInsight,
   PersonaMaterializeResponse,
   ScenarioDiff,
   ScenarioEvaluation,
@@ -49,6 +57,88 @@ import * as api from "@/api";
 const MAX_EVENT_LOG = 1000;          // Cap eventLog to prevent memory leak
 const GRAPH_UPDATE_MIN_INTERVAL = 100; // ms — max 10 reactive graph updates/sec
 const MAX_DEFERRED_EDGES = 5000;     // Cap deferred edge queue
+const MAX_ACTIVITY_FEED = 200;       // Semantic operations stream cap
+const MAX_STEP_HISTORY = 50;         // Per-step history cap
+
+const PIPELINE_STAGE_META: Array<{ id: PipelineStage; label: string }> = [
+  { id: "ingest", label: "Ingest" },
+  { id: "triage", label: "Triage" },
+  { id: "extract", label: "Extract" },
+  { id: "understand", label: "Understand" },
+  { id: "connect", label: "Connect" },
+  { id: "challenge", label: "Challenge" },
+  { id: "verify", label: "Verify" },
+  { id: "report", label: "Report" },
+];
+
+const TERMINAL_STAGE_STATES = new Set<StageState>([
+  "COMPLETED", "FAILED", "CANCELLED", "SKIPPED",
+]);
+
+const VALID_STAGE_STATES = new Set<StageState>([
+  "QUEUED", "ACTIVE", "WAITING", "BLOCKED",
+  "COMPLETED", "FAILED", "CANCELLED", "SKIPPED",
+]);
+
+const VALID_DECOMP_STATES = new Set<DecompState>([
+  "pending", "active", "done", "failed",
+]);
+
+const VALID_ACTIVITY_LEVELS = new Set<ActivityLevel>([
+  "info", "success", "warn", "error",
+]);
+
+const DECOMP_STEPS: Record<string, string[]> = {
+  video: ["container", "metadata", "frames", "scenes", "objects", "align"],
+  pdf: ["verify", "text", "entities", "events", "timestamps", "contradictions"],
+  image: ["verify", "thumbnail", "ocr", "entities", "exif"],
+  generic: ["verify", "text"],
+};
+
+function _initialStages(): Record<string, StageRuntime> {
+  return Object.fromEntries(
+    PIPELINE_STAGE_META.map(({ id, label }) => [id, {
+      stage: id,
+      state: "QUEUED" as StageState,
+      label,
+      detail: "Queued",
+      agents: [],
+      itemCount: null,
+      startedAt: null,
+      completedAt: null,
+      elapsedMs: 0,
+    }])
+  );
+}
+
+function _evidenceKind(filename: string, contentType = ""): string {
+  const lower = `${filename} ${contentType}`.toLowerCase();
+  if (lower.includes("video/") || /\.(mp4|avi|mov|mkv|webm|wmv|flv)\b/.test(lower)) return "video";
+  if (lower.includes("pdf") || lower.endsWith(".pdf")) return "pdf";
+  if (lower.includes("image/") || /\.(png|jpe?g|gif|webp|heic)\b/.test(lower)) return "image";
+  return "generic";
+}
+
+function _evidenceIdForFilename(filename: string): string {
+  // Mirrors the backend v1 event id (display name, bounded and path-safe).
+  const safe = filename
+    .replace(/[\\/]/g, "_")
+    .replace(/[^A-Za-z0-9._ -]/g, "_")
+    .trim()
+    .replace(/ /g, "_")
+    .toLowerCase()
+    .slice(0, 120) || "unknown";
+  return `ev-${safe}`;
+}
+
+function _asFiniteProgress(value: unknown): DecompProgress | null {
+  if (!value || typeof value !== "object") return null;
+  const data = value as Record<string, unknown>;
+  const current = typeof data.current === "number" ? data.current : Number(data.current);
+  const total = typeof data.total === "number" ? data.total : Number(data.total);
+  if (!Number.isFinite(current) || !Number.isFinite(total) || total <= 0 || current < 0) return null;
+  return { current: Math.min(current, total), total };
+}
 
 /**
  * Structural contract the demo route registers via setDemoController().
@@ -66,7 +156,8 @@ const VALID_EVENT_TYPES = new Set<string>([
   "AGENT_COMPLETE", "AGENT_ERROR", "GRAPH_NODE_ADD", "GRAPH_EDGE_ADD",
   "PIPELINE_COMPLETE", "HEARTBEAT", "BATCH_UPDATE",
   "PERSONA_INSIGHT", "REPORT_CHUNK", "CONSENSUS_RESULT",
-  "SCENARIO_EVAL", "SCENARIO_DIFF",
+  "SCENARIO_EVAL", "SCENARIO_DIFF", "STAGE_UPDATE", "ACTIVITY",
+  "DECOMP_UPDATE", "AGENT_WAITING",
 ]);
 
 // ── XSS helper (H-6) ──────────────────────────────────────────────────────
@@ -93,6 +184,14 @@ export const useAnalysisStore = defineStore("analysis", () => {
   const nodes = shallowRef<GraphNode[]>([]);
   const edges = shallowRef<GraphEdge[]>([]);
   const eventLog = ref<WSEvent[]>([]);
+
+  // Observable investigation state. These collections are normalized and
+  // bounded so high-volume WS traffic does not cause a full workspace render.
+  const stages = ref<Record<string, StageRuntime>>(_initialStages());
+  const evidenceDecomp = ref<Map<string, EvidenceRuntime>>(new Map());
+  const activityFeed = ref<ActivityRuntime[]>([]);
+  const waitingAgents = ref<Map<string, AgentWaitingEvent>>(new Map());
+  const clockNow = ref(Date.now());
 
   // ── Swarm State ────────────────────────────────────────────────────
   const swarmState = ref<"idle" | "materializing" | "reporting" | "simulating">("idle");
@@ -123,9 +222,299 @@ export const useAnalysisStore = defineStore("analysis", () => {
   const deferredEdges: GraphEdge[] = [];           // Edges waiting for their nodes
   let lastGraphUpdateTs = 0;                       // Throttle timestamp
   let pendingGraphFlush: ReturnType<typeof setTimeout> | null = null;
+  let stageTicker: ReturnType<typeof setInterval> | null = null;
+
+  const orderedStages = computed(() =>
+    PIPELINE_STAGE_META.map(({ id }) => stages.value[id]).filter(Boolean)
+  );
+  const evidenceList = computed(() => Array.from(evidenceDecomp.value.values()));
+  const currentStage = computed(() =>
+    orderedStages.value.find((stage) => stage.state === "ACTIVE" || stage.state === "WAITING")
+    ?? [...orderedStages.value].reverse().find((stage) => stage.state === "COMPLETED")
+    ?? orderedStages.value[0]
+  );
+
+  function _stopStageTicker(): void {
+    if (stageTicker) {
+      clearInterval(stageTicker);
+      stageTicker = null;
+    }
+  }
+
+  function _hasLiveStage(): boolean {
+    return Object.values(stages.value).some(
+      (stage) => stage.state === "ACTIVE" || stage.state === "WAITING"
+    );
+  }
+
+  function _refreshStageClock(): void {
+    const now = Date.now();
+    clockNow.value = now;
+    const next = { ...stages.value };
+    let changed = false;
+    for (const [id, stage] of Object.entries(next)) {
+      if (!stage.startedAt) continue;
+      const end = stage.state === "ACTIVE" || stage.state === "WAITING"
+        ? now
+        : stage.completedAt
+          ? Date.parse(stage.completedAt)
+          : now;
+      const started = Date.parse(stage.startedAt);
+      if (!Number.isFinite(started) || !Number.isFinite(end)) continue;
+      const elapsedMs = Math.max(0, end - started);
+      if (elapsedMs !== stage.elapsedMs) {
+        next[id] = { ...stage, elapsedMs };
+        changed = true;
+      }
+    }
+    if (changed) stages.value = next;
+  }
+
+  function _syncStageTicker(): void {
+    if (_hasLiveStage()) {
+      if (!stageTicker) stageTicker = setInterval(_refreshStageClock, 1000);
+      _refreshStageClock();
+    } else {
+      _refreshStageClock();
+      _stopStageTicker();
+    }
+  }
+
+  function _clearObservableState(): void {
+    _stopStageTicker();
+    stages.value = _initialStages();
+    evidenceDecomp.value = new Map();
+    activityFeed.value = [];
+    waitingAgents.value = new Map();
+    clockNow.value = Date.now();
+  }
+
+  function _newStep(step: string, state: DecompState = "pending"): import("@/types").DecompStepRuntime {
+    return {
+      step,
+      state,
+      detail: state === "pending" ? "Queued" : "",
+      progress: null,
+      updatedAt: new Date().toISOString(),
+      history: [],
+    };
+  }
+
+  function _normalizeActivityLevel(value: unknown): ActivityLevel {
+    const level = _safeStr(value, "info").toLowerCase() as ActivityLevel;
+    return VALID_ACTIVITY_LEVELS.has(level) ? level : "info";
+  }
+
+  function _eventTimestamp(event?: WSEvent): string {
+    return event?.timestamp && Number.isFinite(Date.parse(event.timestamp))
+      ? event.timestamp
+      : new Date().toISOString();
+  }
+
+  function _ensureAgent(agentType: string): AgentStatus {
+    const existing = agents.value.get(agentType);
+    if (existing) return existing;
+    const created: AgentStatus = {
+      type: agentType,
+      status: "idle",
+      processingTimeMs: 0,
+      entityCount: 0,
+    };
+    agents.value.set(agentType, created);
+    return created;
+  }
+
+  function _recordActivity(event: WSEvent, data: ActivityEvent): void {
+    const text = _safeStr(data.text).trim().slice(0, 120);
+    if (!text) return;
+    const actor = _safeStr(data.actor, "pipeline").slice(0, 32);
+    const stage = _safeStr(data.stage, "").slice(0, 32);
+    const level = _normalizeActivityLevel(data.level);
+    const previous = activityFeed.value[activityFeed.value.length - 1];
+    if (previous && previous.actor === actor && previous.stage === stage && previous.text === text) return;
+    activityFeed.value = [
+      ...activityFeed.value,
+      {
+        id: `${event.timestamp ?? Date.now()}-${activityFeed.value.length}`,
+        actor,
+        stage,
+        text,
+        level,
+        timestamp: _eventTimestamp(event),
+      },
+    ].slice(-MAX_ACTIVITY_FEED);
+  }
+
+  function _applyStageUpdate(event: WSEvent): void {
+    const raw = event.data as Record<string, unknown>;
+    const stage = _safeStr(raw.stage).toLowerCase();
+    if (!stage) return;
+    const stateValue = _safeStr(raw.state, "QUEUED").toUpperCase() as StageState;
+    const state = VALID_STAGE_STATES.has(stateValue) ? stateValue : "QUEUED";
+    const previous = stages.value[stage];
+    const timestamp = _eventTimestamp(event);
+    const startedAt = _safeStr(raw.started_at) ||
+      (state === "ACTIVE" || state === "WAITING" ? previous?.startedAt ?? timestamp : previous?.startedAt ?? null);
+    const completedAt = _safeStr(raw.completed_at) ||
+      (TERMINAL_STAGE_STATES.has(state) ? timestamp : previous?.completedAt ?? null);
+    const itemCountValue = raw.item_count;
+    const itemCount = typeof itemCountValue === "number" && Number.isFinite(itemCountValue) && itemCountValue >= 0
+      ? itemCountValue
+      : previous?.itemCount ?? null;
+    const agentsValue = Array.isArray(raw.agents)
+      ? raw.agents.filter((value): value is string => typeof value === "string").slice(0, 32)
+      : previous?.agents ?? [];
+    const startedMs = startedAt ? Date.parse(startedAt) : NaN;
+    const completedMs = completedAt ? Date.parse(completedAt) : NaN;
+    const elapsedMs = Number.isFinite(startedMs)
+      ? Math.max(0, (Number.isFinite(completedMs) ? completedMs : Date.now()) - startedMs)
+      : previous?.elapsedMs ?? 0;
+    stages.value = {
+      ...stages.value,
+      [stage]: {
+        stage,
+        state,
+        label: _safeStr(raw.label, previous?.label ?? stage),
+        detail: _safeStr(raw.detail, previous?.detail ?? ""),
+        agents: agentsValue,
+        itemCount,
+        startedAt: startedAt || null,
+        completedAt: completedAt || null,
+        elapsedMs,
+      },
+    };
+    _syncStageTicker();
+  }
+
+  function _applyActivity(event: WSEvent): void {
+    _recordActivity(event, {
+      actor: _safeStr(event.data?.actor, "pipeline"),
+      stage: _safeStr(event.data?.stage),
+      text: _safeStr(event.data?.text),
+      level: _normalizeActivityLevel(event.data?.level),
+      metrics: event.data?.metrics as Record<string, unknown> | null | undefined,
+    });
+  }
+
+  function _applyDecompUpdate(event: WSEvent): void {
+    const raw = event.data as Record<string, unknown>;
+    const evidenceId = _safeStr(raw.evidence_id).slice(0, 255);
+    const filename = _safeStr(raw.filename, evidenceId).slice(0, 255);
+    const step = _safeStr(raw.step, "decomposition").slice(0, 64);
+    const stateValue = _safeStr(raw.state, "pending").toLowerCase() as DecompState;
+    const state = VALID_DECOMP_STATES.has(stateValue) ? stateValue : "pending";
+    if (!evidenceId || !step) return;
+    const timestamp = _eventTimestamp(event);
+    const progress = _asFiniteProgress(raw.progress);
+    const map = new Map(evidenceDecomp.value);
+    const previousEvidence = map.get(evidenceId);
+    const previousStep = previousEvidence?.steps[step];
+    const nextStep = previousStep ?? _newStep(step, state);
+    const detail = _safeStr(raw.detail).slice(0, 255);
+    const history = [
+      ...(nextStep.history ?? []),
+      { state, detail, progress, timestamp },
+    ].slice(-MAX_STEP_HISTORY);
+    const updatedStep: DecompStepRuntime = {
+      ...nextStep,
+      state,
+      detail: detail || nextStep.detail,
+      progress,
+      updatedAt: timestamp,
+      history,
+    };
+    map.set(evidenceId, {
+      evidenceId,
+      filename,
+      contentType: previousEvidence?.contentType,
+      sizeBytes: previousEvidence?.sizeBytes,
+      hashVerified: step === "verify" && state === "done"
+        ? true
+        : previousEvidence?.hashVerified,
+      steps: { ...(previousEvidence?.steps ?? {}), [step]: updatedStep },
+      firstSeenAt: previousEvidence?.firstSeenAt ?? timestamp,
+      updatedAt: timestamp,
+    });
+    evidenceDecomp.value = map;
+  }
+
+  function _applyAgentWaiting(event: WSEvent): void {
+    const raw = event.data as Record<string, unknown>;
+    const agentType = _safeStr(raw.agent, _safeStr(event.agent)).slice(0, 32);
+    if (!agentType) return;
+    const upstream = Array.isArray(raw.upstream)
+      ? raw.upstream.flatMap((item) => {
+        if (!item || typeof item !== "object") return [];
+        const value = item as Record<string, unknown>;
+        return [{ agent: _safeStr(value.agent, "upstream"), status: _safeStr(value.status, "waiting") }];
+      }).slice(0, 16)
+      : [];
+    const reason = _safeStr(raw.reason, "Waiting for an upstream result").slice(0, 255);
+    const expectedNext = _safeStr(raw.expected_next) || null;
+    const current = _ensureAgent(agentType);
+    agents.value.set(agentType, {
+      ...current,
+      status: "waiting",
+      waitingReason: reason,
+      waitingFor: upstream,
+    });
+    waitingAgents.value = new Map(waitingAgents.value).set(agentType, {
+      agent: agentType,
+      reason,
+      upstream,
+      expected_next: expectedNext,
+    });
+  }
+
+  function _clearAgentWaiting(agentType: string | undefined): void {
+    if (!agentType) return;
+    const nextWaiting = new Map(waitingAgents.value);
+    nextWaiting.delete(agentType);
+    waitingAgents.value = nextWaiting;
+    const current = agents.value.get(agentType);
+    if (current?.status === "waiting") {
+      agents.value.set(agentType, {
+        ...current,
+        status: "running",
+        waitingReason: undefined,
+        waitingFor: undefined,
+      });
+    }
+  }
+
+  function registerEvidence(
+    files: Array<{ filename: string; contentType?: string; sizeBytes?: number }>
+  ): void {
+    const map = new Map(evidenceDecomp.value);
+    const now = new Date().toISOString();
+    for (const file of files) {
+      const filename = _safeStr(file.filename, "evidence").slice(0, 255);
+      const evidenceId = _evidenceIdForFilename(filename);
+      const kind = _evidenceKind(filename, file.contentType);
+      const existing = map.get(evidenceId);
+      const steps = { ...(existing?.steps ?? {}) };
+      for (const step of DECOMP_STEPS[kind] ?? DECOMP_STEPS.generic) {
+        if (!steps[step]) steps[step] = _newStep(step);
+      }
+      map.set(evidenceId, {
+        evidenceId,
+        filename,
+        contentType: file.contentType,
+        sizeBytes: file.sizeBytes,
+        hashVerified: existing?.hashVerified,
+        steps,
+        firstSeenAt: existing?.firstSeenAt ?? now,
+        updatedAt: now,
+      });
+    }
+    evidenceDecomp.value = map;
+  }
 
   // ── Computed ───────────────────────────────────────────────────────
   const agentList = computed(() => Array.from(agents.value.values()));
+  const activeAgentList = computed(() =>
+    agentList.value.filter((agent) => agent.status === "running" || agent.status === "waiting")
+  );
 
   const visNodes = computed<VisNode[]>(() =>
     nodes.value.map((n) => {
@@ -156,6 +545,28 @@ export const useAnalysisStore = defineStore("analysis", () => {
 
   const scenarioDiffs = computed(() => scenarios.value);
 
+  const runElapsedMs = computed(() => {
+    const starts = orderedStages.value
+      .map((stage) => stage.startedAt ? Date.parse(stage.startedAt) : NaN)
+      .filter((value) => Number.isFinite(value));
+    if (!starts.length) return processingTimeMs.value || 0;
+    const startedAt = Math.min(...starts);
+    const terminal = ["completed", "failed", "partial"].includes(status.value);
+    const end = terminal && processingTimeMs.value > 0
+      ? startedAt + processingTimeMs.value
+      : clockNow.value;
+    return Math.max(0, end - startedAt);
+  });
+
+  const observableCounts = computed(() => ({
+    evidence: evidenceList.value.length,
+    entities: nodes.value.length,
+    relationships: edges.value.length,
+    observations: activityFeed.value.filter((item) => item.level === "success").length,
+    conflicts: activityFeed.value.filter((item) => item.level === "warn" || item.level === "error").length,
+    activeAgents: activeAgentList.value.length,
+  }));
+
   // ── Actions ────────────────────────────────────────────────────────
 
   function setToken(t: string) {
@@ -171,7 +582,10 @@ export const useAnalysisStore = defineStore("analysis", () => {
     demoController = controller;
   }
 
-  function startJob(id: string) {
+  function startJob(
+    id: string,
+    initialEvidence: Array<{ filename: string; contentType?: string; sizeBytes?: number }> = [],
+  ) {
     jobId.value = id;
     status.value = "queued";
     error.value = "";
@@ -195,6 +609,8 @@ export const useAnalysisStore = defineStore("analysis", () => {
     scenarios.value = [];
     scenarioEvals.value = [];
     conversationId.value = "";
+    _clearObservableState();
+    if (initialEvidence.length) registerEvidence(initialEvidence);
     if (pendingGraphFlush) {
       clearTimeout(pendingGraphFlush);
       pendingGraphFlush = null;
@@ -285,19 +701,38 @@ export const useAnalysisStore = defineStore("analysis", () => {
         status.value = "processing";
         break;
 
+      case "STAGE_UPDATE":
+        _applyStageUpdate(event);
+        break;
+
+      case "ACTIVITY":
+        _applyActivity(event);
+        break;
+
+      case "DECOMP_UPDATE":
+        _applyDecompUpdate(event);
+        break;
+
+      case "AGENT_WAITING":
+        _applyAgentWaiting(event);
+        break;
+
       case "BATCH_UPDATE":
         _handleBatchUpdate(event);
         break;
 
       case "AGENT_START":
+        _clearAgentWaiting(event.agent ? String(event.agent) : undefined);
         _updateAgent(event, "running");
         break;
 
       case "AGENT_COMPLETE":
+        _clearAgentWaiting(event.agent ? String(event.agent) : undefined);
         _updateAgentComplete(event);
         break;
 
       case "AGENT_ERROR":
+        _clearAgentWaiting(event.agent ? String(event.agent) : undefined);
         _updateAgentError(event);
         break;
 
@@ -315,6 +750,7 @@ export const useAnalysisStore = defineStore("analysis", () => {
         const data = event?.data;
         status.value = _safeStr(data?.status, "completed");
         processingTimeMs.value = _safeNumber(data?.processing_time_ms, 0);
+        _syncStageTicker();
         // Flush any remaining deferred edges
         _flushDeferredEdges();
         _triggerGraphReactivity();
@@ -412,15 +848,34 @@ export const useAnalysisStore = defineStore("analysis", () => {
       const eventType = _safeStr(event?.event);
 
       switch (eventType) {
+        case "STAGE_UPDATE":
+          _applyStageUpdate(event);
+          break;
+
+        case "ACTIVITY":
+          _applyActivity(event);
+          break;
+
+        case "DECOMP_UPDATE":
+          _applyDecompUpdate(event);
+          break;
+
+        case "AGENT_WAITING":
+          _applyAgentWaiting(event);
+          break;
+
         case "AGENT_START":
+          _clearAgentWaiting(event.agent ? String(event.agent) : undefined);
           _updateAgent(event, "running");
           break;
 
         case "AGENT_COMPLETE":
+          _clearAgentWaiting(event.agent ? String(event.agent) : undefined);
           _updateAgentComplete(event);
           break;
 
         case "AGENT_ERROR":
+          _clearAgentWaiting(event.agent ? String(event.agent) : undefined);
           _updateAgentError(event);
           break;
 
@@ -549,38 +1004,53 @@ export const useAnalysisStore = defineStore("analysis", () => {
 
   function _updateAgent(event: WSEvent, newStatus: AgentStatus['status']): void {
     const agentType = event?.agent;
-    if (!agentType || !agents.value.has(agentType)) return;
-    const agent = agents.value.get(agentType)!;
-    agent.status = newStatus;
-    agents.value.set(agentType, { ...agent });
+    if (!agentType) return;
+    const agent = _ensureAgent(String(agentType));
+    agents.value.set(String(agentType), {
+      ...agent,
+      status: newStatus,
+      waitingReason: undefined,
+      waitingFor: undefined,
+    });
   }
 
   function _updateAgentComplete(event: WSEvent): void {
     const agentType = event?.agent;
-    if (!agentType || !agents.value.has(agentType)) return;
-    const agent = agents.value.get(agentType)!;
-    agent.status = "complete";
-    agent.processingTimeMs = _safeNumber(event?.data?.processing_time_ms, 0);
-    agent.entityCount = _safeNumber(event?.data?.entities, 0);
-    agents.value.set(agentType, { ...agent });
+    if (!agentType) return;
+    const key = String(agentType);
+    const agent = _ensureAgent(key);
+    agents.value.set(key, {
+      ...agent,
+      status: "complete",
+      processingTimeMs: _safeNumber(event?.data?.processing_time_ms, agent.processingTimeMs),
+      entityCount: _safeNumber(event?.data?.entities, agent.entityCount),
+      waitingReason: undefined,
+      waitingFor: undefined,
+    });
 
     // Clear any previous recoverable error for this agent
-    recoverableErrors.value.delete(agentType);
+    recoverableErrors.value.delete(String(agentType));
   }
 
   function _updateAgentError(event: WSEvent): void {
     const agentType = event?.agent;
-    if (!agentType || !agents.value.has(agentType)) return;
-    const agent = agents.value.get(agentType)!;
-    agent.status = "error";
-    agent.error = _safeStr(event?.data?.error, "Unknown error");
-    agents.value.set(agentType, { ...agent });
+    if (!agentType) return;
+    const key = String(agentType);
+    const agent = _ensureAgent(key);
+    const message = _safeStr(event?.data?.error, "Unknown error");
+    agents.value.set(key, {
+      ...agent,
+      status: "error",
+      error: message,
+      waitingReason: undefined,
+      waitingFor: undefined,
+    });
 
     // Track recoverable errors (surfaced as integrity warnings)
     const isRecoverable = Boolean(event?.data?.recoverable);
-    const existing = recoverableErrors.value.get(agentType);
-    recoverableErrors.value.set(agentType, {
-      error: agent.error,
+    const existing = recoverableErrors.value.get(key);
+    recoverableErrors.value.set(key, {
+      error: message,
       attempts: existing ? existing.attempts + 1 : 1,
       recoverable: isRecoverable,
     });
@@ -786,11 +1256,28 @@ export const useAnalysisStore = defineStore("analysis", () => {
     scenarios.value = [];
     scenarioEvals.value = [];
     conversationId.value = "";
+    _clearObservableState();
     if (pendingGraphFlush) {
       clearTimeout(pendingGraphFlush);
       pendingGraphFlush = null;
     }
   }
+
+  onScopeDispose(() => {
+    _stopStageTicker();
+    if (pendingGraphFlush) {
+      clearTimeout(pendingGraphFlush);
+      pendingGraphFlush = null;
+    }
+  });
+
+  onScopeDispose(() => {
+    _stopStageTicker();
+    if (pendingGraphFlush) {
+      clearTimeout(pendingGraphFlush);
+      pendingGraphFlush = null;
+    }
+  });
 
   return {
     // State
@@ -819,15 +1306,27 @@ export const useAnalysisStore = defineStore("analysis", () => {
     scenarioEvals,
     conversationId,
     isDemo,
+    stages,
+    evidenceDecomp,
+    activityFeed,
+    waitingAgents,
+    clockNow,
     // Computed
     agentList,
     visNodes,
     visEdges,
     scenarioDiffs,
+    orderedStages,
+    evidenceList,
+    currentStage,
+    activeAgentList,
+    runElapsedMs,
+    observableCounts,
     // Actions
     setToken,
     setDemoController,
     startJob,
+    registerEvidence,
     handleWSEvent,
     retryPipeline,
     setError,

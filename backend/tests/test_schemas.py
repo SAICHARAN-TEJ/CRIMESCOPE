@@ -13,7 +13,9 @@ class TestEnums:
 
         assert EventType.JOB_STARTED == "JOB_STARTED"
         assert EventType.PIPELINE_COMPLETE == "PIPELINE_COMPLETE"
-        assert len(EventType) == 16
+        # v4.5 observable workspace adds STAGE_UPDATE, ACTIVITY,
+        # DECOMP_UPDATE, and AGENT_WAITING to the original v4.4 vocabulary.
+        assert len(EventType) == 20
 
     def test_event_type_additions_v4_4(self):
         """§14: CONNECTED, BATCH_UPDATE, HEARTBEAT are first-class events."""

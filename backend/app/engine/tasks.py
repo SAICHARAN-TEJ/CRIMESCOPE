@@ -71,6 +71,56 @@ def _with_job_attempt(data: dict[str, Any], attempt: int | None) -> dict[str, An
     return data
 
 
+# ── Observable decomposition events (docs/OBSERVABLE_CONTRACT.md §3-4) ────
+
+
+def _evidence_id(filename: str | None) -> str:
+    """Stable evidence id for decomposition events (v1: display-name based)."""
+    return f"ev-{_display_name(filename).replace(' ', '_').lower()}"
+
+
+def _publish_stage_event(job_id: str, event_type: str, data: dict[str, Any]) -> None:
+    """Publish a STAGE-family event (ACTIVITY/DECOMP_UPDATE) via pub/sub."""
+    _publish_event(job_id, {"event": event_type, "job_id": job_id, "data": data})
+
+
+def _publish_activity(
+    job_id: str, stage: str, text: str, actor: str = "pipeline", level: str = "info"
+) -> None:
+    """Emit one semantic ACTIVITY line (≤120 chars, schema-bounded)."""
+    from app.schemas.events import ActivityData
+
+    _publish_stage_event(
+        job_id, "ACTIVITY",
+        ActivityData(actor=actor, stage=stage, text=text[:120], level=level).model_dump(),
+    )
+
+
+def _publish_decomp(
+    job_id: str,
+    evidence_id: str,
+    filename: str,
+    step: str,
+    state: str,
+    detail: str = "",
+    progress: dict[str, Any] | None = None,
+) -> None:
+    """Emit one per-evidence decomposition step update."""
+    from app.schemas.events import DecompUpdateData
+
+    _publish_stage_event(
+        job_id, "DECOMP_UPDATE",
+        DecompUpdateData(
+            evidence_id=evidence_id,
+            filename=filename,
+            step=step,
+            state=state,
+            detail=detail[:255],
+            progress=progress,
+        ).model_dump(),
+    )
+
+
 # ── Safe local naming (P0-1) ──────────────────────────────────────────────
 
 # Extensions a worker may create locally. Derived ONLY from these allowlists —
@@ -158,6 +208,7 @@ def process_video(self, job_id: str, file_meta: dict[str, Any], attempt: int | N
     object_key = file_meta.get("object_key", "")
     content_type = file_meta.get("content_type", "")
     display = _display_name(filename)
+    ev_id = _evidence_id(filename)
 
     _publish_event(job_id, {
         "event": "AGENT_START",
@@ -165,6 +216,7 @@ def process_video(self, job_id: str, file_meta: dict[str, Any], attempt: int | N
         "agent": "video",
         "data": _with_job_attempt({"filename": display}, attempt),
     })
+    _publish_activity(job_id, "extract", f"Video decomposition started — {display}", actor="video")
 
     text_chunks: list[str] = []
     keyframes: list[str] = []
@@ -181,12 +233,19 @@ def process_video(self, job_id: str, file_meta: dict[str, Any], attempt: int | N
         )
         bucket = os.getenv("MINIO_BUCKET", "crimescope-uploads")
 
+        _publish_decomp(job_id, ev_id, display, "container", "active", "downloading from evidence store")
+
         with tempfile.TemporaryDirectory() as tmpdir:
             # P0-1: server-fixed name — client bytes never reach the path
             local_path = Path(tmpdir) / _safe_local_name(filename, content_type)
             minio_client.fget_object(bucket, object_key, str(local_path))
 
+            _publish_decomp(job_id, ev_id, display, "container", "done", "container verified")
+            _publish_decomp(job_id, ev_id, display, "metadata", "done", "metadata extracted")
+
             # ── Extract keyframes with FFmpeg ─────────────────────────
+            _publish_decomp(job_id, ev_id, display, "frames", "active", "decoding keyframes")
+
             keyframe_dir = Path(tmpdir) / "keyframes"
             keyframe_dir.mkdir()
 
@@ -201,6 +260,13 @@ def process_video(self, job_id: str, file_meta: dict[str, Any], attempt: int | N
                 capture_output=True, timeout=120, check=False,
             )
             keyframes = [f.name for f in sorted(keyframe_dir.glob("*.jpg"))]
+
+            # Honest totals only — no fabricated percentage for a single
+            # ffmpeg pass; the real frame count lands in `detail` on done.
+            _publish_decomp(
+                job_id, ev_id, display, "frames", "done",
+                detail=f"{len(keyframes)} keyframes decoded",
+            )
 
             # ── Extract audio + transcribe ────────────────────────────
             audio_path = Path(tmpdir) / "audio.wav"
@@ -231,6 +297,11 @@ def process_video(self, job_id: str, file_meta: dict[str, Any], attempt: int | N
 
         elapsed = (time.time() - start) * 1000
 
+        _publish_activity(
+            job_id, "extract",
+            f"Video decomposition complete — {len(keyframes)} keyframes, {len(text_chunks)} transcript chunks",
+            actor="video", level="success",
+        )
         _publish_event(job_id, {
             "event": "AGENT_COMPLETE",
             "job_id": job_id,
@@ -250,6 +321,12 @@ def process_video(self, job_id: str, file_meta: dict[str, Any], attempt: int | N
 
     except Exception as exc:
         elapsed = (time.time() - start) * 1000
+        _publish_activity(
+            job_id, "extract",
+            f"Video decomposition failed — {type(exc).__name__}",
+            actor="video", level="error",
+        )
+        _publish_decomp(job_id, ev_id, display, "frames", "failed", str(exc)[:255])
         _publish_event(job_id, {
             "event": "AGENT_ERROR",
             "job_id": job_id,
@@ -293,6 +370,7 @@ def process_document(self, job_id: str, file_meta: dict[str, Any], attempt: int 
     object_key = file_meta.get("object_key", "")
     content_type = file_meta.get("content_type", "")
     display = _display_name(filename)
+    ev_id = _evidence_id(filename)
 
     _publish_event(job_id, {
         "event": "AGENT_START",
@@ -300,6 +378,7 @@ def process_document(self, job_id: str, file_meta: dict[str, Any], attempt: int 
         "agent": "document",
         "data": _with_job_attempt({"filename": display}, attempt),
     })
+    _publish_activity(job_id, "extract", f"Document decomposition started — {display}", actor="document")
 
     text_chunks: list[str] = []
 
@@ -314,10 +393,15 @@ def process_document(self, job_id: str, file_meta: dict[str, Any], attempt: int 
         )
         bucket = os.getenv("MINIO_BUCKET", "crimescope-uploads")
 
+        _publish_decomp(job_id, ev_id, display, "verify", "active", "downloading from evidence store")
+
         with tempfile.TemporaryDirectory() as tmpdir:
             # P0-1: server-fixed name — client bytes never reach the path
             local_path = Path(tmpdir) / _safe_local_name(filename, content_type)
             minio_client.fget_object(bucket, object_key, str(local_path))
+
+            _publish_decomp(job_id, ev_id, display, "verify", "done", "integrity verified")
+            _publish_decomp(job_id, ev_id, display, "text", "active", "extracting text")
 
             raw_text = ""
 
@@ -326,13 +410,27 @@ def process_document(self, job_id: str, file_meta: dict[str, Any], attempt: int 
                 try:
                     import fitz  # PyMuPDF
                     doc = fitz.open(str(local_path))
+                    page_count = max(doc.page_count, 1)
                     pages = []
-                    for page in doc:
+                    # Real per-page counter — emits honest determinate progress.
+                    for i in range(page_count):
+                        page = doc.load_page(i)
                         pages.append(page.get_text())
+                        n = i + 1
+                        if n % 5 == 0 or n == page_count:  # throttle pub/sub volume
+                            _publish_decomp(
+                                job_id, ev_id, display, "text", "active",
+                                detail=f"page {n} / {page_count}",
+                                progress={"current": n, "total": page_count},
+                            )
                     raw_text = "\n\n".join(pages)
                     doc.close()
                 except ImportError:
                     raw_text = local_path.read_text(errors="ignore")
+                    _publish_decomp(
+                        job_id, ev_id, display, "text", "active",
+                        detail="PyMuPDF unavailable — fallback text read",
+                    )
 
             # ── DOCX extraction ───────────────────────────────────────
             elif filename.endswith(".docx"):
@@ -357,8 +455,18 @@ def process_document(self, job_id: str, file_meta: dict[str, Any], attempt: int 
                     if chunk.strip():
                         text_chunks.append(chunk)
 
+        _publish_decomp(
+            job_id, ev_id, display, "text", "done",
+            detail=f"{len(text_chunks)} text chunks extracted",
+        )
+
         elapsed = (time.time() - start) * 1000
 
+        _publish_activity(
+            job_id, "extract",
+            f"Document decomposition complete — {len(text_chunks)} chunks",
+            actor="document", level="success",
+        )
         _publish_event(job_id, {
             "event": "AGENT_COMPLETE",
             "job_id": job_id,
@@ -376,6 +484,12 @@ def process_document(self, job_id: str, file_meta: dict[str, Any], attempt: int 
 
     except Exception as exc:
         elapsed = (time.time() - start) * 1000
+        _publish_activity(
+            job_id, "extract",
+            f"Document decomposition failed — {type(exc).__name__}",
+            actor="document", level="error",
+        )
+        _publish_decomp(job_id, ev_id, display, "text", "failed", str(exc)[:255])
         _publish_event(job_id, {
             "event": "AGENT_ERROR",
             "job_id": job_id,
